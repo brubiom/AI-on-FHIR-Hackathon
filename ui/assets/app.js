@@ -347,10 +347,13 @@
         <button class="btn small ghost" data-suggest="${li}:${vi}">retry</button>`;
     else if (cache && cache.suggestions) {
       sug = cache.suggestions.length
-        ? cache.suggestions.map((s, si) =>
-            `<button class="chip binding" data-accept="${li}:${vi}:${si}" title="score ${s.score}">
-               ${esc((s.system_name || "").replace("SNOMED CT","SNOMED"))} ${esc(s.code)} · ${esc(s.display)}
-               <span class="num" style="margin-left:4px">${(s.score).toFixed(2)}</span></button>`).join(" ")
+        ? `<div class="term-suggests">` + cache.suggestions.map((s, si) =>
+            `<button class="term-sug" data-accept="${li}:${vi}:${si}" title="${esc(s.match_type || "")}">
+               <span class="sc">${(s.score).toFixed(2)}</span>
+               <span class="sys">${esc((s.system_name || "").replace("SNOMED CT", "SNOMED"))} ${esc(s.code)}</span>
+               <div class="dsp">${esc(s.display)}</div>
+             </button>`).join("") + `</div>`
+          + `<button class="btn small ghost" data-suggest="${li}:${vi}" style="margin-top:4px">re-run</button>`
         : `<span class="sub">no match</span> <button class="btn small ghost" data-suggest="${li}:${vi}">retry</button>`;
     }
     const acceptedCell = acc
@@ -367,7 +370,12 @@
 
   function bindTerminologyHeader() {
     const sel = $("#termTarget");
-    if (sel) sel.addEventListener("change", () => { state.termTarget = sel.value; });
+    if (sel) sel.addEventListener("change", () => {
+      state.termTarget = sel.value;
+      // reset the shown suggestions when the target system changes
+      for (const k in suggestCache) delete suggestCache[k];
+      renderTerminology();
+    });
     const exp = $("#termExport");
     if (exp) exp.addEventListener("click", exportConceptMap);
   }

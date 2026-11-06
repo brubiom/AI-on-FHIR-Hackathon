@@ -244,6 +244,14 @@ tr.selected td.tgt-cell { background: color-mix(in srgb, var(--target) 70%, var(
 .detect-table td { padding: 6px 10px; border-bottom: 1px solid var(--line-soft); }
 .detect-table td.mono { font-family: var(--mono); }
 
+/* terminology suggestions (vertical list, up to 3) */
+.term-suggests { display: flex; flex-direction: column; gap: 5px; max-width: 460px; }
+.term-sug { position: relative; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-chip); padding: 6px 10px; cursor: pointer; color: var(--ink); font: inherit; font-size: 12.5px; }
+.term-sug:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.term-sug .sys { font-family: var(--mono); color: var(--accent); font-weight: 500; }
+.term-sug .sc { position: absolute; top: 6px; right: 10px; color: var(--ink-soft); font-size: 11px; }
+.term-sug .dsp { margin-top: 2px; color: var(--ink); }
+
 /* ---- Copilot panel ---- */
 .copilot { background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
 .app:not(.copilot-open) .copilot { display: none; }

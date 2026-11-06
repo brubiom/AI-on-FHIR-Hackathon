@@ -37,6 +37,50 @@ def _strip_json(text: str) -> str:
     return t.strip()
 
 
+# Opus 5.5 first-party rates, USD per 1M tokens (estimate for the cost log).
+PRICING = {"input": 4.0, "output": 20.0, "cache_read": 0.20, "cache_write": 5.0}
+
+
+def _slim_metadata(meta: dict) -> dict:
+    """Drop verbose fields (samples, comments) and keep the facts the agent needs.
+
+    Shrinks the source_metadata that is cached and re-sent each turn, lowering
+    cost without removing structure (tables, column types, PK/FK, lookups).
+    """
+    out = {k: meta[k] for k in ("engine", "database", "guide", "schemas", "candidate_entities")
+           if k in meta}
+    out["tables"] = [
+        {
+            "name": t.get("name"),
+            "row_count": t.get("row_count"),
+            "role": t.get("role"),
+            "primary_key": t.get("primary_key"),
+            "columns": [{"name": c.get("name"), "sql_type": c.get("sql_type"),
+                         "nullable": c.get("nullable")} for c in t.get("columns", [])],
+            "foreign_keys": t.get("foreign_keys"),
+        }
+        for t in meta.get("tables", [])
+    ]
+    out["lookups"] = meta.get("lookups", [])
+    return out
+
+
+def _report_cost(usage: dict, model: str, verbose: bool) -> dict:
+    cost = (usage["input"] * PRICING["input"] + usage["output"] * PRICING["output"]
+            + usage["cache_read"] * PRICING["cache_read"]
+            + usage["cache_write"] * PRICING["cache_write"]) / 1_000_000
+    summary = {**usage, "model": model, "estimated_usd": round(cost, 4)}
+    if verbose:
+        print(f"  cost ~${cost:.3f}  (in {usage['input']}, out {usage['output']}, "
+              f"cache_read {usage['cache_read']}, cache_write {usage['cache_write']} tokens)")
+    try:
+        (config.DATA_DIR / "_agent_usage.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return summary
+
+
 def run(
     source_metadata: dict | str | Path = config.SOURCE_METADATA_PATH,
     *,
@@ -55,9 +99,11 @@ def run(
     import anthropic
 
     if isinstance(source_metadata, (str, Path)):
-        metadata_json = Path(source_metadata).read_text(encoding="utf-8")
+        meta = json.loads(Path(source_metadata).read_text(encoding="utf-8"))
     else:
-        metadata_json = json.dumps(source_metadata, ensure_ascii=False, indent=2)
+        meta = source_metadata
+    # Slim + compact to cut tokens (and it is cached, so it is billed cheaply on re-send).
+    metadata_json = json.dumps(_slim_metadata(meta), ensure_ascii=False, separators=(",", ":"))
 
     tools = GuideTools(store=store)
     # Terminology tool (sugerir_conceptos) — verified codes from Termbox. Optional.
@@ -74,18 +120,31 @@ def run(
 
     client = anthropic.Anthropic()
 
-    messages = [{"role": "user", "content": build_user_message(metadata_json, entities)}]
+    # Prompt caching: the tools + system + the (stable) metadata message form the
+    # cached prefix, so each later turn re-sends only small tool results and reads
+    # the big prefix from cache (~$0.20/MTok instead of $4).
+    system_param = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+    first_user = [{"type": "text", "text": build_user_message(metadata_json, entities),
+                   "cache_control": {"type": "ephemeral"}}]
+    messages = [{"role": "user", "content": first_user}]
     final_text = None
+    usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
 
     for turn in range(1, max_turns + 1):
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
+            system=system_param,
             thinking={"type": "adaptive"},
             tools=tool_defs,
             messages=messages,
         )
+        u = getattr(response, "usage", None)
+        if u is not None:
+            usage["input"] += getattr(u, "input_tokens", 0) or 0
+            usage["output"] += getattr(u, "output_tokens", 0) or 0
+            usage["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
+            usage["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
 
         if response.stop_reason == "tool_use":
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -122,6 +181,7 @@ def run(
                     final_text, encoding="utf-8")
             except Exception:
                 pass
+            _report_cost(usage, model, verbose)
             raise RuntimeError(
                 f"the model hit max_tokens ({max_tokens}) — the output was truncated. "
                 "Scope the run to fewer entities (e.g. `--entity Patient`) or raise "
@@ -131,6 +191,7 @@ def run(
     else:
         raise RuntimeError(f"agent did not finish within {max_turns} turns")
 
+    _report_cost(usage, model, verbose)
     if not final_text:
         raise RuntimeError("agent produced no final text message")
 

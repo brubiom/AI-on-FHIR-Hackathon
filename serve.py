@@ -274,7 +274,14 @@ class Handler(SimpleHTTPRequestHandler):
             run_to_file(source_metadata=ROOT / "data" / "source_metadata.json",
                         entities=entities, verbose=False)
             surface_structure_map()
-            self._json({"ok": True})
+            usage = None
+            uf = ROOT / "data" / "_agent_usage.json"
+            if uf.exists():
+                try:
+                    usage = json.loads(uf.read_text(encoding="utf-8"))
+                except Exception:
+                    usage = None
+            self._json({"ok": True, "usage": usage})
         except Exception as exc:
             self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
 

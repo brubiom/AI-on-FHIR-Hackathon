@@ -767,8 +767,9 @@
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
         if (ok && j.ok) {
-          out.textContent = "Done — loading the structure map.";
-          toast("Structure map generated");
+          const cost = j.usage && j.usage.estimated_usd != null ? ` — cost ~$${j.usage.estimated_usd}` : "";
+          out.textContent = `Done — loading the structure map${cost}.`;
+          toast("Structure map generated" + cost);
           tryLoad("./data/structure_map.json", (d) => {
             if (d && d.maps) state.structureMap = d;
             else if (d && d.entity) state.structureMap = { generated_at: d.generated_at || "", maps: [d] };

@@ -19,8 +19,18 @@
     entityIndex: 0,
     tab: "mapping",      // source | mapping | gaps
     selected: null,      // "map:<i>" | "ref:<i>"
-    review: loadReview() // { "<entity>:<kind>:<i>": {s:'accepted'|'edited'|'rejected', note} }
+    review: loadReview(), // { "<entity>:<kind>:<i>": {s:'accepted'|'edited'|'rejected', note} }
+    termMap: loadTermMap(), // { "<table>|<code>": {system,code,display,score} } accepted standard codes
+    termTarget: "SNOMED"   // page-level target system for suggestions
   };
+
+  function loadTermMap() {
+    try { return JSON.parse(localStorage.getItem("sma-termmap") || "{}"); }
+    catch (e) { return {}; }
+  }
+  function saveTermMap() {
+    try { localStorage.setItem("sma-termmap", JSON.stringify(state.termMap)); } catch (e) {}
+  }
 
   function loadReview() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
@@ -273,6 +283,151 @@
            <div class="c-meta">${esc(a.question)}<br><span style="color:var(--review)">Impact:</span> ${esc(a.impact)}</div></div>`).join("") :
           `<div class="card"><div class="c-meta">None.</div></div>`}</div>
       </section>`;
+  }
+
+  // ---- terminology tab (source coded values → standard concepts) ---------
+  const TERM_TARGETS = ["SNOMED", "LOINC", "RxNorm", "ICD-10-CM", "CPT"];
+  const suggestCache = {}; // key -> { loading, error, suggestions:[...] }
+  const termKey = (table, code) => `${table}|${code}`;
+
+  function renderTerminology() {
+    $("#stage").className = "stage";
+    const lookups = (state.sourceMeta && state.sourceMeta.lookups || [])
+      .filter(l => l && typeof l === "object" && Array.isArray(l.values) && l.values.length);
+    const accepted = Object.keys(state.termMap).length;
+
+    const header = `
+      <div class="panel">
+        <h3>Map source terminology → standard concepts</h3>
+        <p class="lead">For each coded value in the source lookups, get verified concepts from the
+          Termbox terminology server and accept a standard code. No API key needed.</p>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <label class="sub">Target system
+            <select id="termTarget" style="margin-left:6px; padding:4px 8px; border:1px solid var(--line); border-radius:6px;">
+              ${TERM_TARGETS.map(t => `<option ${t === state.termTarget ? "selected" : ""}>${t}</option>`).join("")}
+            </select>
+          </label>
+          <span class="sub">${accepted} accepted</span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn small" id="termExport" ${accepted ? "" : "disabled"}>Export concept map</button>
+        </div>
+      </div>`;
+
+    if (!lookups.length) {
+      $("#stage").innerHTML = header +
+        `<div class="panel"><p class="lead">No source lookups detected. Load real source metadata
+         (run the platform against the provider DB, or drop a source_metadata.json in the Source tab).</p></div>`;
+      bindTerminologyHeader();
+      return;
+    }
+
+    const sections = lookups.map((lk, li) => {
+      const rows = lk.values.map((v, vi) => termRow(lk, v, li, vi)).join("");
+      return `<div class="panel">
+        <h3 class="mono" style="text-transform:none; letter-spacing:0; font-size:14px; border:none; color:var(--ink);">
+          ${esc(lk.table)} <span class="sub">(${esc(lk.code_column)} · ${esc(lk.display_column)})</span></h3>
+        <table class="detect-table"><thead><tr>
+          <th>Source value</th><th>Suggestions (Termbox)</th><th>Accepted standard code</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>`;
+    }).join("");
+
+    $("#stage").innerHTML = header + sections;
+    bindTerminologyHeader();
+    bindTerminologyRows();
+  }
+
+  function termRow(lk, v, li, vi) {
+    const key = termKey(lk.table, v.code);
+    const acc = state.termMap[key];
+    const cache = suggestCache[key];
+    let sug = `<button class="btn small" data-suggest="${li}:${vi}">Suggest</button>`;
+    if (cache && cache.loading) sug = `<span class="sub">querying Termbox…</span>`;
+    else if (cache && cache.error) sug = `<span class="sub" style="color:var(--gap)">${esc(cache.error)}</span>
+        <button class="btn small ghost" data-suggest="${li}:${vi}">retry</button>`;
+    else if (cache && cache.suggestions) {
+      sug = cache.suggestions.length
+        ? cache.suggestions.map((s, si) =>
+            `<button class="chip binding" data-accept="${li}:${vi}:${si}" title="score ${s.score}">
+               ${esc((s.system_name || "").replace("SNOMED CT","SNOMED"))} ${esc(s.code)} · ${esc(s.display)}
+               <span class="num" style="margin-left:4px">${(s.score).toFixed(2)}</span></button>`).join(" ")
+        : `<span class="sub">no match</span> <button class="btn small ghost" data-suggest="${li}:${vi}">retry</button>`;
+    }
+    const acceptedCell = acc
+      ? `<span class="chip binding mono">${esc(acc.system_name)} ${esc(acc.code)}</span>
+         <div class="sub">${esc(acc.display)}</div>
+         <button class="btn small ghost" data-clear="${li}:${vi}" style="margin-top:4px">clear</button>`
+      : `<span class="sub">—</span>`;
+    return `<tr>
+      <td class="mono">${esc(v.code)}<div class="sub" style="font-family:var(--sans)">${esc(v.display)}</div></td>
+      <td>${sug}</td>
+      <td>${acceptedCell}</td>
+    </tr>`;
+  }
+
+  function bindTerminologyHeader() {
+    const sel = $("#termTarget");
+    if (sel) sel.addEventListener("change", () => { state.termTarget = sel.value; });
+    const exp = $("#termExport");
+    if (exp) exp.addEventListener("click", exportConceptMap);
+  }
+
+  function bindTerminologyRows() {
+    const lookups = (state.sourceMeta.lookups || []).filter(l => l && Array.isArray(l.values));
+    $$("[data-suggest]").forEach(btn => btn.addEventListener("click", () => {
+      const [li, vi] = btn.getAttribute("data-suggest").split(":").map(Number);
+      const lk = lookups[li], v = lk.values[vi];
+      suggestFor(lk, v);
+    }));
+    $$("[data-accept]").forEach(btn => btn.addEventListener("click", () => {
+      const [li, vi, si] = btn.getAttribute("data-accept").split(":").map(Number);
+      const lk = lookups[li], v = lk.values[vi];
+      const s = suggestCache[termKey(lk.table, v.code)].suggestions[si];
+      state.termMap[termKey(lk.table, v.code)] = {
+        system: s.system, system_name: s.system_name, code: s.code, display: s.display, score: s.score,
+        src_table: lk.table, src_code: v.code, src_display: v.display
+      };
+      saveTermMap(); toast("Concept accepted"); renderTerminology();
+    }));
+    $$("[data-clear]").forEach(btn => btn.addEventListener("click", () => {
+      const [li, vi] = btn.getAttribute("data-clear").split(":").map(Number);
+      const lk = lookups[li], v = lk.values[vi];
+      delete state.termMap[termKey(lk.table, v.code)];
+      saveTermMap(); renderTerminology();
+    }));
+  }
+
+  function suggestFor(lk, v) {
+    const key = termKey(lk.table, v.code);
+    suggestCache[key] = { loading: true };
+    renderTerminology();
+    fetch("/api/suggest", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        concept: { code: v.code, system: null, display: v.display,
+                   context: `${lk.table} code list (${lk.code_column}/${lk.display_column})` },
+        target_systems: [state.termTarget], max_suggestions: 3
+      })
+    }).then(r => r.json()).then(d => {
+      if (d.error) suggestCache[key] = { error: d.error };
+      else suggestCache[key] = { suggestions: d.suggestions || [] };
+      renderTerminology();
+    }).catch(e => {
+      suggestCache[key] = { error: "needs the server (python serve.py / docker compose up): " + e.message };
+      renderTerminology();
+    });
+  }
+
+  function exportConceptMap() {
+    const rows = Object.values(state.termMap).map(m => ({
+      source: { table: m.src_table, code: m.src_code, display: m.src_display },
+      target: { system: m.system, code: m.code, display: m.display }, score: m.score
+    }));
+    const blob = new Blob([JSON.stringify({ generated_at: new Date().toISOString().slice(0, 10), concept_maps: rows }, null, 2)],
+      { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "concept_map.json"; a.click();
+    URL.revokeObjectURL(url); toast("Exported");
   }
 
   // ---- source tab --------------------------------------------------------
@@ -576,6 +731,7 @@
     $$(".tabs .tab").forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === state.tab));
     if (state.tab === "mapping") renderMapping();
     else if (state.tab === "gaps") renderGaps();
+    else if (state.tab === "terminology") renderTerminology();
     else renderSource();
   }
 

@@ -128,7 +128,23 @@ class Handler(SimpleHTTPRequestHandler):
             return self._load_ig()
         if route == "/api/generate":
             return self._generate()
+        if route == "/api/suggest":
+            return self._suggest()
         self._json({"ok": False, "error": "not found"}, 404)
+
+    def _suggest(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            data = json.loads(self.rfile.read(length) or b"{}")
+            from src.terminology.suggest import suggest_concepts
+            res = suggest_concepts(
+                data.get("concept") or {},
+                target_systems=data.get("target_systems"),
+                max_suggestions=min(int(data.get("max_suggestions") or 3), 3),
+            )
+            self._json(res.to_dict())
+        except Exception as exc:
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _load_ig(self):
         length = int(self.headers.get("Content-Length", "0"))

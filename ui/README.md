@@ -34,6 +34,12 @@ cd ui && python -m http.server 8000
   reusable pieces.
 - **Gaps tab** — unfilled required (one burgundy banner), unmapped source,
   ambiguities.
+- **Terminology tab** — maps the source's coded values (the detected lookups)
+  to standard concepts. Per value, **Suggest** calls the Termbox terminology
+  server (`/api/suggest`, no API key) and lists up to 3 verified concepts
+  (system · code · display · score); **accept** one and it's recorded. Pick the
+  target system (SNOMED / LOINC / RxNorm / ICD-10-CM / CPT) at the top, and
+  **Export concept map** downloads `concept_map.json`. Needs the running server.
 - **Copilot panel** — cited-answer stub (toggle in the header). Ask "why this
   element?", "what's required?", "show bindings".
 - **Review flow** — accept / edit (with note) / reject per row, persisted in

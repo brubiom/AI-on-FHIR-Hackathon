@@ -138,7 +138,8 @@ code, .mono { font-family: var(--mono); }
 .stage.with-detail { grid-template-columns: minmax(0,1fr) var(--detail-w); gap: 20px; }
 
 /* ---- Reconciliation table ---- */
-.recon { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.recon-wrap { min-width: 0; overflow-x: auto; border-radius: var(--radius); }
+.recon { width: 100%; min-width: 720px; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .recon thead th {
   font-size: 12px; font-weight: 600; color: var(--ink-soft); text-align: left;
   padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1;
@@ -270,6 +271,8 @@ a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible
   .copilot { position: fixed; right: 0; top: 0; height: 100vh; width: min(360px, 90vw); z-index: 45; }
   .stage.with-detail { grid-template-columns: 1fr; }
   .detail { position: static; max-height: none; }
+  .recon-wrap { overflow-x: visible; }
+  .recon { min-width: 0; }
   .recon, .recon thead, .recon tbody, .recon th, .recon td, .recon tr { display: block; }
   .recon thead { display: none; }
   .recon tbody tr { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }

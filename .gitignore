@@ -2,6 +2,7 @@
 /data/*.db
 /data/*.json
 /data/*.html
+/ui/data/
 
 # Secrets
 .env

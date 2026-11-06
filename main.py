@@ -63,6 +63,25 @@ def cmd_load_guide(_args) -> int:
     return 0
 
 
+def cmd_load_ig(args) -> int:
+    from src.guide.load_ig import load_ig
+
+    path = args.path
+    if not path:
+        print("usage: python main.py load-ig <path-to-.tgz-or-folder>", file=sys.stderr)
+        return 1
+    try:
+        summary = load_ig(path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[3/5] {exc}", file=sys.stderr)
+        return 1
+    print(f"[3/5] guide store (FHIR IG) -> {summary['db_path']}")
+    print(f"      profiles={summary['profiles']}  logical_models={summary['logical_models']}  "
+          f"campos={summary['campos_rows']}  modelos={summary['modelos_rows']}  "
+          f"terminologias={summary['terminologias_rows']}  (from {summary['resources_read']} resources)")
+    return 0
+
+
 def cmd_agent(args) -> int:
     from src.agent.agent import run_to_file
 
@@ -105,12 +124,15 @@ def main(argv=None) -> int:
         ("build-db", cmd_build_db, "Build the synthetic source database"),
         ("extract", cmd_extract, "Extract source_metadata.json"),
         ("load-guide", cmd_load_guide, "Load guide CSVs into the guide store"),
+        ("load-ig", cmd_load_ig, "Load a FHIR IG package (.tgz/folder) into the guide store"),
         ("agent", cmd_agent, "Run the agent -> structure_map.json"),
         ("review", cmd_review, "Render the HTML review view"),
         ("all", cmd_all, "Run every step in order"),
     ]:
         p = sub.add_parser(name, help=help_)
         p.add_argument("--quiet", action="store_true", help="suppress agent tool-call trace")
+        if name == "load-ig":
+            p.add_argument("path", nargs="?", help="path to the FHIR IG .tgz or folder")
         p.set_defaults(func=fn)
 
     args = parser.parse_args(argv)

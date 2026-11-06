@@ -1,11 +1,34 @@
 # Implementation guide store — input files
 
-Drop the three CSVs of the **Bupa Chile Core Implementation Guide**
-(`fhir.bupa.core` 4.6.0, FHIR R4) here, then run:
+The guide store is what the agent validates against. You can load it from a
+**FHIR IG package** (recommended — the real guide) or from **three CSVs**.
+
+## Option A — FHIR IG package (recommended)
+
+Drop the **Bupa Chile Core** package (`fhir.bupa.core` 4.6.0, FHIR R4) here as
+a `.tgz` (npm tarball) or an unpacked folder of FHIR JSON resources, then:
 
 ```bash
-python main.py load-guide
+python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+# or a folder:
+python main.py load-ig guide/fhir.bupa.core
 ```
+
+The loader ([`src/guide/load_ig.py`](../src/guide/load_ig.py)) reads the IG
+resources and builds the same `guide.db` the tools query:
+
+| FHIR resource | becomes | backs the tool |
+| --- | --- | --- |
+| `StructureDefinition` (profile) | `campos` (one row per element: min/max, type, binding, fixed, mustSupport, targetProfile) | `consultar_campo`, `listar_perfiles_por_dominio` |
+| `StructureDefinition` (`kind: logical`) | `modelos` | `ver_modelo_logico` |
+| `ValueSet` / `CodeSystem` | `terminologias` (codes + display; a ValueSet that includes a whole CodeSystem is expanded) | `buscar_binding` |
+
+Accepts a `.tgz`, a folder, a `package/` folder, and resources wrapped in a
+`Bundle`. Column names are canonical, so no `columns.json` mapping is needed.
+
+## Option B — three CSVs
+
+Alternatively, drop the guide as three CSVs and run `python main.py load-guide`:
 
 Expected file names (configurable in [`config.py`](../config.py) → `GUIDE_CSVS`):
 

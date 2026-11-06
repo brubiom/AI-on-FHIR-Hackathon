@@ -141,7 +141,7 @@
     const rows = (e.mappings || []).map(mappingRow).join("") +
       (e.references || []).map(referenceRow).join("");
     $("#stage").innerHTML = `
-      <div>
+      <div class="recon-wrap">
         <table class="recon" aria-label="reconciliation table">
           <thead><tr>
             <th class="src">Source</th><th>Seam</th><th class="tgt">FHIR target</th><th>State</th><th>Actions</th>
@@ -266,11 +266,17 @@
   }
 
   // ---- source tab --------------------------------------------------------
+  function lookupName(x) { return typeof x === "string" ? x : (x && x.table) || ""; }
+
   function renderSource() {
     const meta = state.sourceMeta || {};
-    const tables = meta.tables || [];
+    const tables = (meta.tables || []).map(t => ({
+      name: t.name,
+      rows: t.rows != null ? t.rows : (t.row_count != null ? t.row_count : "—"),
+      role: t.role || (t.columns ? "table" : "—")
+    }));
     const entities = meta.candidate_entities || [];
-    const lookups = meta.lookups || [];
+    const lookups = (meta.lookups || []).map(lookupName);
     $("#stage").className = "stage";
     $("#stage").innerHTML = `
       <div class="panel">
@@ -289,19 +295,27 @@
           <div class="kpi"><div class="n">${lookups.length}</div><div class="l">lookup tables</div></div>
         </div>
         <div class="chipset" style="margin-bottom:14px">
-          ${entities.map(x => `<span class="chip">${esc(x)}</span>`).join("")}
+          ${entities.slice(0, 30).map(x => `<span class="chip">${esc(x)}</span>`).join("")}
           ${lookups.map(x => `<span class="chip lookup">${esc(x)}</span>`).join("")}
         </div>
         <table class="detect-table"><thead><tr><th>Table</th><th>Rows</th><th>Role</th></tr></thead>
           <tbody>${tables.map(t => `<tr><td class="mono">${esc(t.name)}</td><td>${esc(t.rows)}</td><td>${esc(t.role)}</td></tr>`).join("")}</tbody>
         </table>
       </div>
-      <div class="panel">
-        <h3>Guide</h3>
-        <p class="lead">${meta.guide ? `${esc(meta.guide.package)} ${esc(meta.guide.version)} — ${meta.guide.indexed ? "indexed" : "not indexed"}` : "no guide loaded"}</p>
-        <button class="btn primary" id="generateBtn">Generate structure map</button>
+      <div class="panel" id="guidePanel">
+        <h3>Implementation Guide</h3>
+        <p class="lead" id="guideStatus">checking guide status…</p>
+        <div class="dropzone" id="igDrop">Drop the FHIR IG package (<span class="mono">.tgz</span>) here, or click to choose
+          <input type="file" id="igInput" accept=".tgz,.gz,application/gzip,application/x-gzip" class="hidden">
+        </div>
+        <div id="igResult" class="sub" style="margin-top:10px"></div>
+        <div style="margin-top:16px; display:flex; align-items:center; gap:10px;">
+          <button class="btn primary" id="generateBtn">Generate structure map</button>
+          <span class="sub" id="genResult"></span>
+        </div>
       </div>`;
     bindSource();
+    refreshGuideStatus();
   }
 
   // ---- events ------------------------------------------------------------
@@ -363,8 +377,78 @@
       dz.addEventListener("drop", (e) => { e.preventDefault(); dz.classList.remove("drag"); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
       fi.addEventListener("change", () => { if (fi.files[0]) loadFile(fi.files[0]); });
     }
+    // IG uploader (.tgz) → server
+    const ig = $("#igDrop"), igi = $("#igInput");
+    if (ig && igi) {
+      ig.addEventListener("click", () => igi.click());
+      ig.addEventListener("dragover", (e) => { e.preventDefault(); ig.classList.add("drag"); });
+      ig.addEventListener("dragleave", () => ig.classList.remove("drag"));
+      ig.addEventListener("drop", (e) => { e.preventDefault(); ig.classList.remove("drag"); if (e.dataTransfer.files[0]) uploadIG(e.dataTransfer.files[0]); });
+      igi.addEventListener("change", () => { if (igi.files[0]) uploadIG(igi.files[0]); });
+    }
     const gen = $("#generateBtn");
-    if (gen) gen.addEventListener("click", () => { state.tab = "mapping"; toast("Using loaded structure map"); render(); });
+    if (gen) gen.addEventListener("click", runGenerate);
+  }
+
+  function refreshGuideStatus() {
+    const el = $("#guideStatus");
+    if (!el) return;
+    fetch("/api/guide-status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (!s) throw new Error("no api");
+        if (s.loaded) {
+          el.innerHTML = `Loaded — <b>${s.profiles}</b> profiles · <b>${s.campos_rows}</b> elements · ` +
+            `<b>${s.modelos_rows}</b> logical-model fields · <b>${s.terminologias_rows}</b> terminology codes.`;
+        } else {
+          el.textContent = "No guide loaded yet. Upload the FHIR IG package below.";
+        }
+      })
+      .catch(() => {
+        // served statically / file:// — no backend
+        el.innerHTML = "Guide loading needs the running server. Start it with " +
+          "<code>python serve.py</code>, then reload.";
+        const ig = $("#igDrop"); if (ig) { ig.style.opacity = ".5"; ig.style.pointerEvents = "none"; }
+        const gb = $("#generateBtn"); if (gb) gb.disabled = true;
+      });
+  }
+
+  function uploadIG(file) {
+    const res = $("#igResult");
+    res.textContent = `Uploading ${file.name} and building the guide store…`;
+    fetch("/api/load-ig?name=" + encodeURIComponent(file.name), { method: "POST", body: file })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ok && j.ok) {
+          res.innerHTML = `Loaded <b>${esc(file.name)}</b> → ${j.profiles} profiles, ` +
+            `${j.campos_rows} elements, ${j.terminologias_rows} terminology codes.`;
+          toast("Guide loaded");
+          refreshGuideStatus();
+        } else {
+          res.innerHTML = `<span style="color:var(--gap)">Error:</span> ${esc(j.error || "upload failed")}`;
+        }
+      })
+      .catch((e) => { res.innerHTML = `<span style="color:var(--gap)">Error:</span> ${esc(e.message)}`; });
+  }
+
+  function runGenerate() {
+    const out = $("#genResult");
+    out.textContent = "Running the agent…";
+    fetch("/api/generate", { method: "POST" })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ok && j.ok) {
+          out.textContent = "Done — loading the structure map.";
+          toast("Structure map generated");
+          tryLoad("./data/structure_map.json", (d) => {
+            if (d && d.maps) state.structureMap = d;
+            else if (d && d.entity) state.structureMap = { generated_at: d.generated_at || "", maps: [d] };
+          }).then(() => { state.entityIndex = 0; state.selected = null; setTab("mapping"); });
+        } else {
+          out.innerHTML = `<span style="color:var(--gap)">${esc(j.error || "failed")}</span>`;
+        }
+      })
+      .catch((e) => { out.innerHTML = `<span style="color:var(--gap)">${esc(e.message)}</span>`; });
   }
 
   function loadFile(file) {
@@ -506,7 +590,26 @@
     $("#exportBtn").addEventListener("click", exportMap);
     $("#overrideGaps").addEventListener("change", renderHeader);
 
-    render();
+    bootstrap();
+  }
+
+  // Load real artifacts from the server when present; fall back to the inlined
+  // samples (e.g. opened from file://, where fetch is blocked).
+  function tryLoad(url, apply) {
+    return fetch(url, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) apply(d); })
+      .catch(() => {});
+  }
+
+  function bootstrap() {
+    Promise.all([
+      tryLoad("./data/source_metadata.json", (d) => { if (d && d.tables) state.sourceMeta = d; }),
+      tryLoad("./data/structure_map.json", (d) => {
+        if (d && d.maps) state.structureMap = d;
+        else if (d && d.entity) state.structureMap = { generated_at: d.generated_at || "", maps: [d] };
+      })
+    ]).then(() => render());
   }
 
   document.addEventListener("DOMContentLoaded", init);

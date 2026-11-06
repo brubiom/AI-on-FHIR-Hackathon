@@ -1,0 +1,53 @@
+# Full project in two services: the provider database and the app/platform.
+# The app runs on Python 3.12 (stable) so the Anthropic agent works — the host's
+# Python 3.15 alpha cannot load the SDK.
+#
+#   docker compose up --build          # DB + UI at http://localhost:8000
+#   ANTHROPIC_API_KEY=sk-... docker compose up --build   # agent enabled
+#   docker compose run --rm app python main.py load-ig guide/<pkg>.tgz
+#   docker compose run --rm app python main.py agent
+name: fhir-copilot
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:5440:5432"          # same host port as src/source_db for parity
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./src/source_db/db:/db:ro
+      # First boot on an empty volume: creates + seeds the `provider` database
+      - ./src/source_db/db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+      APP_IN_DOCKER: "1"
+      PYTHONUNBUFFERED: "1"
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: provider
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # mount the project so guide/ uploads, data/ and ui/data/ persist on the host
+      - ./:/app
+
+volumes:
+  pgdata: {}

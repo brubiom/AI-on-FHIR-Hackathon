@@ -45,12 +45,28 @@ guide CSVs ──► guide.db ──► Phase B tools ────────�
   engine, plus spreadsheet code lists in `src/source_db/vocab/*.csv`. This is the
   "disparate data" the terminology integration is designed for.
 
-## Setup
+## Run with Docker (recommended)
+
+One command brings up the provider database **and** the app (UI + agent) on a
+stable Python 3.12 — so you don't need a stable Python on the host:
+
+```bash
+docker compose up --build                            # → http://localhost:8000
+ANTHROPIC_API_KEY=sk-... docker compose up --build   # agent enabled
+# one-off steps in the app container:
+docker compose run --rm app python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+docker compose run --rm app python main.py agent
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full flow.
+
+## Setup (without Docker)
 
 > **Python version:** use a **stable Python 3.11–3.13** for the agent step. The
 > Anthropic SDK depends on `jiter`, whose compiled wheel does not load on
 > Python 3.15 alpha (`ImportError: DLL load failed while importing jiter`).
-> Steps 1–3 and 5 run on any Python 3.10+; only step 4 needs the SDK.
+> Steps 1–3 and 5 run on any Python 3.10+; only step 4 needs the SDK. Docker
+> (above) avoids this entirely.
 
 ```bash
 py -3.12 -m venv .venv && .venv\Scripts\activate   # Windows (PowerShell)

@@ -26,16 +26,25 @@ _SCHEMA_LIST = ", ".join(f"'{s}'" for s in SCHEMAS)
 
 
 def _psql(sql: str) -> list[list[str]]:
-    """Run one SQL statement in the container and return rows as lists of cells."""
+    """Run one SQL statement against the provider DB; rows as lists of cells.
+
+    Two modes:
+    - direct (container / CI): if PGHOST is set, call `psql` straight at the
+      server (reads PGHOST/PGUSER/PGPASSWORD/PGDATABASE from the environment).
+    - host: otherwise go through the running container with `docker compose exec`.
+    """
     env = dict(os.environ, MSYS_NO_PATHCONV="1", MSYS2_ARG_CONV_EXCL="*")
-    cmd = [
-        "docker", "compose", "exec", "-T", "postgres",
-        "psql", "-U", "postgres", "-d", "provider",
-        "-tAqF", "\t", "-c", sql,
-    ]
-    out = subprocess.run(
-        cmd, cwd=SOURCE_DB_DIR, env=env, capture_output=True, text=True
-    )
+    if os.getenv("PGHOST"):
+        cmd = ["psql", "-tAqF", "\t", "-c", sql]
+        cwd = None
+    else:
+        cmd = [
+            "docker", "compose", "exec", "-T", "postgres",
+            "psql", "-U", "postgres", "-d", "provider",
+            "-tAqF", "\t", "-c", sql,
+        ]
+        cwd = SOURCE_DB_DIR
+    out = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"psql failed: {out.stderr.strip() or out.stdout.strip()}")
     rows = []

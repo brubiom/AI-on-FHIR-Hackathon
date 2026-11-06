@@ -171,7 +171,10 @@ class Handler(SimpleHTTPRequestHandler):
 
 def serve(port: int, open_browser: bool) -> None:
     handler = functools.partial(Handler, directory=str(UI_DIR))
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    # In a container, bind 0.0.0.0 so Docker's published port can reach us;
+    # on the host, keep it on loopback.
+    bind = "0.0.0.0" if os.getenv("APP_IN_DOCKER") else "127.0.0.1"
+    httpd = ThreadingHTTPServer((bind, port), handler)
     url = f"http://localhost:{port}"
     print(f"\n  platform ready → {url}")
     print("  (Ctrl+C to stop; the database keeps running — `cd src/source_db && docker compose down` to stop it)\n")
@@ -192,15 +195,21 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     print("Starting the Structure Map Agent platform…")
-    if not args.no_db:
+    in_docker = bool(os.getenv("APP_IN_DOCKER") or os.getenv("PGHOST"))
+    if args.no_db:
+        print("[1-2/3] --no-db: using bundled sample data.")
+    elif in_docker:
+        # compose guarantees the db service is healthy before we start
+        print("[1/3] database managed by docker compose (depends_on healthy).")
+        print("[2/3] extracting live source metadata…")
+        extract_metadata()
+    else:
         print("[1/3] ensuring the provider database is up…")
         if ensure_db():
             print("[2/3] extracting live source metadata…")
             extract_metadata()
         else:
             print("[2/3] skipped extraction.")
-    else:
-        print("[1-2/3] --no-db: using bundled sample data.")
     if surface_structure_map():
         print("      found data/structure_map.json → serving the real map.")
     else:

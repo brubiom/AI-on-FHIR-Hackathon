@@ -60,5 +60,19 @@ AGENT_MAX_TURNS = int(os.getenv("AGENT_MAX_TURNS", "40"))
 
 STRUCTURE_MAP_PATH = DATA_DIR / "structure_map.json"
 
+# --- Terminology: Termbox MCP (concept-mapping suggestions) -------------------
+# Hosted Termbox MCP server (Streamable HTTP + SSE on the same URL, no auth).
+TERMBOX_MCP_URL = os.getenv("TERMBOX_MCP_URL", "https://tx.health-samurai.io/mcp/sse")
+TERMBOX_TIMEOUT = float(os.getenv("TERMBOX_TIMEOUT", "30"))
+# Systems searched when the caller gives no target and the source has no standard system.
+TERMBOX_DEFAULT_TARGETS = [
+    s.strip() for s in os.getenv(
+        "TERMBOX_DEFAULT_TARGETS", "http://snomed.info/sct,http://loinc.org").split(",") if s.strip()
+]
+# Max text-query variants per input (each is sent to every target system).
+TERMBOX_MAX_QUERIES = int(os.getenv("TERMBOX_MAX_QUERIES", "5"))
+# Suggestions scoring below this are dropped (unless nothing better exists).
+TERMBOX_MIN_SCORE = float(os.getenv("TERMBOX_MIN_SCORE", "0.35"))
+
 # --- Step 5: review view ----------------------------------------------------
 REVIEW_HTML_PATH = DATA_DIR / "review.html"

@@ -314,16 +314,17 @@ def main(argv=None) -> int:
     print("Starting the Structure Map Agent platform…")
     in_docker = bool(os.getenv("APP_IN_DOCKER") or os.getenv("PGHOST"))
 
-    # Start BLANK: no pre-loaded summary or map. The DB is connected live from
-    # the Source tab (POST /api/connect), the map is generated live, then migrated.
+    # Source starts disconnected (connect the DB live from the UI), but a
+    # pre-generated structure_map stays cached so Mapping/Gaps are ready on reload.
     try:
         UI_DATA.mkdir(parents=True, exist_ok=True)
-        for f in ("source_metadata.json", "structure_map.json"):
-            p = UI_DATA / f
-            if p.exists():
-                p.unlink()
+        p = UI_DATA / "source_metadata.json"
+        if p.exists():
+            p.unlink()
     except Exception:
         pass
+    if surface_structure_map():
+        print("      cached structure_map.json found → Mapping/Gaps ready on load.")
 
     if args.no_db:
         print("[1/2] --no-db: no database; use the upload option in the Source tab.")

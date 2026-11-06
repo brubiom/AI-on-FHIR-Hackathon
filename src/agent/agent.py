@@ -19,6 +19,11 @@ from src.agent.prompts import SYSTEM_PROMPT, build_user_message
 from src.guide.store import GuideStore
 from src.guide.tools import TOOL_DEFINITIONS, GuideTools
 
+try:
+    from src.terminology.tools import TERMINOLOGY_TOOL_DEFINITIONS, TerminologyTools
+except Exception:  # module optional; agent still runs with guide tools only
+    TERMINOLOGY_TOOL_DEFINITIONS, TerminologyTools = [], None
+
 
 def _strip_json(text: str) -> str:
     """Tolerate an accidental markdown fence around the final JSON."""
@@ -50,6 +55,18 @@ def run(
         metadata_json = json.dumps(source_metadata, ensure_ascii=False, indent=2)
 
     tools = GuideTools(store=store)
+    # Terminology tool (sugerir_conceptos) — verified codes from Termbox. Optional.
+    term = None
+    tool_defs = list(TOOL_DEFINITIONS)
+    if TerminologyTools is not None:
+        try:
+            term = TerminologyTools()
+            tool_defs += TERMINOLOGY_TOOL_DEFINITIONS
+        except Exception as exc:  # keep the agent usable without terminology
+            if verbose:
+                print(f"  [warn] terminology tool unavailable: {exc}")
+            term = None
+
     client = anthropic.Anthropic()
 
     messages = [{"role": "user", "content": build_user_message(metadata_json)}]
@@ -61,7 +78,7 @@ def run(
             max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             thinking={"type": "adaptive"},
-            tools=TOOL_DEFINITIONS,
+            tools=tool_defs,
             messages=messages,
         )
 
@@ -73,7 +90,10 @@ def run(
             messages.append({"role": "assistant", "content": response.content})
             tool_results = []
             for b in tool_use_blocks:
-                result = tools.dispatch(b.name, b.input)
+                if term is not None and term.handles(b.name):
+                    result = term.dispatch(b.name, b.input)
+                else:
+                    result = tools.dispatch(b.name, b.input)
                 is_error = result.lstrip().startswith('{"error"')
                 tool_results.append(
                     {

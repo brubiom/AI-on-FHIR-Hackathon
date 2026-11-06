@@ -23,14 +23,19 @@ FACTS — do not re-derive or second-guess them.
   Phase B — understand the guide. You know NOTHING about the guide's fields \
 from memory. Every field fact (type, min/max, binding, fixed value, logical \
 model) MUST come from a tool call. Available tools: consultar_campo, \
-ver_modelo_logico, buscar_binding, buscar_en_guia, listar_perfiles_por_dominio.
+ver_modelo_logico, buscar_binding, buscar_en_guia, listar_perfiles_por_dominio, \
+and sugerir_conceptos (maps a source code/label to verified standard concepts \
+— SNOMED CT, LOINC, RxNorm, ICD-10-CM... — via the Termbox terminology server).
   Phase C — propose the map. For each source column: pick candidate target \
 profiles for its entity; find the best-matching FHIR element with \
 consultar_campo / ver_modelo_logico; set transform to one of direct, \
 code-translation (code columns via a lookup), calculated, or fixed; if the \
 element has a binding, look it up with buscar_binding and, for code columns, \
 align the lookup labels to the value set (report mismatches in \
-terminology_notes); if the column is an FK, resolve it to a FHIR Reference \
+terminology_notes); for any source code or lookup value that must become a \
+standard code (SNOMED CT, LOINC, RxNorm, ICD-10-CM, CPT...), call \
+sugerir_conceptos and cite the result as {"source":"termbox","ref":"<system>|<code>"} \
+— never write a standard code from memory; if the column is an FK, resolve it to a FHIR Reference \
 whose targetProfile matches the referenced entity's profile; attach confidence, \
 rationale and citation. Finally compute the gap blocks by walking the target \
 profile's required elements (min>=1).

@@ -193,9 +193,17 @@ tr.selected td.tgt-cell { background: color-mix(in srgb, var(--target) 70%, var(
 .icon-btn:hover { border-color: var(--ink-soft); color: var(--ink); }
 .icon-btn.on { border-color: var(--accent); color: var(--accent); }
 
-/* ---- Detail (context) panel ---- */
-.detail { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0; align-self: start; position: sticky; top: 0; max-height: calc(100vh - 160px); overflow: auto; }
-.detail .d-head { padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+/* ---- Detail pop-up (modal) ---- */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(20,28,38,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 24px; animation: fade .12s ease; }
+.modal { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; width: 100%; max-width: 520px; max-height: 85vh; overflow: auto; box-shadow: 0 18px 50px rgba(15,23,32,.28); animation: pop .14s ease; }
+.modal-close { position: absolute; top: 10px; right: 10px; z-index: 2; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-chip); width: 30px; height: 30px; cursor: pointer; color: var(--ink-soft); font-size: 14px; line-height: 1; }
+.modal-close:hover { border-color: var(--ink-soft); color: var(--ink); }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+
+/* content reused inside the modal (styles below are scoped to .detail) */
+.detail { background: var(--surface); padding: 0; }
+.detail .d-head { padding: 14px 48px 14px 16px; border-bottom: 1px solid var(--line-soft); }
 .detail .d-head .seam-kind { color: var(--ink-soft); font-size: 12px; }
 .detail .d-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; }
 .detail .empty { padding: 28px 16px; color: var(--ink-soft); font-size: 13px; }

@@ -149,9 +149,19 @@
           <tbody id="reconBody">${rows}</tbody>
         </table>
       </div>
-      <aside class="detail" id="detail">${detailHtml()}</aside>`;
-    $("#stage").className = "stage with-detail";
+      ${state.selected ? modalHtml() : ""}`;
+    $("#stage").className = "stage";
     bindRows();
+  }
+
+  function modalHtml() {
+    return `
+      <div class="modal-backdrop" id="detailBackdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="mapping detail">
+          <button class="modal-close" id="detailClose" aria-label="close">✕</button>
+          <div class="detail">${detailHtml()}</div>
+        </div>
+      </div>`;
   }
 
   function detailHtml() {
@@ -336,17 +346,27 @@
         applyReview(wrap.getAttribute("data-kind"), +wrap.getAttribute("data-i"), btn.getAttribute("data-act"));
       });
     });
-    // detail panel action buttons
-    $$("#detail .d-actions .btn").forEach(btn => {
+    // detail modal action buttons
+    $$(".modal .d-actions .btn").forEach(btn => {
       btn.addEventListener("click", () => {
         const wrap = btn.closest(".d-actions");
         applyReview(wrap.getAttribute("data-kind"), +wrap.getAttribute("data-i"), btn.getAttribute("data-act"));
       });
     });
+    // modal close (button + backdrop)
+    const close = $("#detailClose");
+    if (close) close.addEventListener("click", closeDetail);
+    const backdrop = $("#detailBackdrop");
+    if (backdrop) backdrop.addEventListener("click", (ev) => { if (ev.target === backdrop) closeDetail(); });
   }
 
   function selectRow(key) {
     state.selected = key;
+    renderMapping();
+  }
+
+  function closeDetail() {
+    state.selected = null;
     renderMapping();
   }
 
@@ -561,6 +581,10 @@
 
   // ---- init --------------------------------------------------------------
   function init() {
+    // close the detail modal with Escape
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && state.selected) closeDetail();
+    });
     // tabs
     $$(".tabs .tab").forEach(b => b.addEventListener("click", () => setTab(b.getAttribute("data-tab"))));
     // entity switcher

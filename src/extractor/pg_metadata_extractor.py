@@ -218,7 +218,7 @@ def extract() -> dict:
     return {
         "engine": "postgresql",
         "database": "provider",
-        "guide": {"package": "fhir.bupa.core", "version": "4.6.0", "indexed": False},
+        "guide": {"package": "hl7.fhir.cl.clcore", "version": "1.9.3", "indexed": False},
         "schemas": SCHEMAS,
         "candidate_entities": candidate_entities,
         "tables": out_tables,

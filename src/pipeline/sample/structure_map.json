@@ -173,6 +173,53 @@
           "reference_to": {"entity": "Encounter", "id_prefix": "enc"}
         }
       ]
+    },
+    {
+      "entity": "Condition",
+      "target_profile": "condition-bupa",
+      "source": {
+        "table": "adt.encounter_diagnosis",
+        "query": "SELECT ed.encounter_diagnosis_id, ed.icd10_code, ed.description, ed.dx_type, ed.encounter_id, e.patient_id FROM adt.encounter_diagnosis ed JOIN adt.encounter e ON e.encounter_id = ed.encounter_id",
+        "id_column": "encounter_diagnosis_id",
+        "id_prefix": "cond"
+      },
+      "mappings": [
+        {
+          "target": {"element": "Condition.clinicalStatus", "type": "CodeableConcept"},
+          "transform": "fixed",
+          "value": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active", "display": "Active"}]}
+        },
+        {
+          "target": {"element": "Condition.verificationStatus", "type": "CodeableConcept"},
+          "transform": "fixed",
+          "value": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed", "display": "Confirmed"}]}
+        },
+        {
+          "target": {"element": "Condition.category", "type": "CodeableConcept"},
+          "transform": "fixed",
+          "value": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "encounter-diagnosis", "display": "Encounter Diagnosis"}]}]
+        },
+        {
+          "source": {"table": "adt.encounter_diagnosis", "column": "icd10_code"},
+          "target": {"element": "Condition.code", "type": "CodeableConcept"},
+          "transform": "coding",
+          "system": "http://hl7.org/fhir/sid/icd-10-cm",
+          "display_column": "description",
+          "required": true
+        }
+      ],
+      "references": [
+        {
+          "column": "patient_id",
+          "target": {"element": "Condition.subject", "type": "Reference"},
+          "reference_to": {"entity": "Patient", "id_prefix": "pat"}
+        },
+        {
+          "column": "encounter_id",
+          "target": {"element": "Condition.encounter", "type": "Reference"},
+          "reference_to": {"entity": "Encounter", "id_prefix": "enc"}
+        }
+      ]
     }
   ]
 }

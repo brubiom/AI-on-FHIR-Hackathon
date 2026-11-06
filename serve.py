@@ -130,6 +130,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self._generate()
         if route == "/api/suggest":
             return self._suggest()
+        if route == "/api/fhir-check":
+            return self._fhir_check()
+        if route == "/api/load":
+            return self._load()
         self._json({"ok": False, "error": "not found"}, 404)
 
     def _suggest(self):
@@ -168,6 +172,74 @@ class Handler(SimpleHTTPRequestHandler):
                 tmp.unlink()
             except OSError:
                 pass
+
+    def _aidbox_client(self):
+        """Build an AidboxClient from config (.env). Returns the client (may lack auth)."""
+        import config
+        from src.pipeline import AidboxClient
+        return AidboxClient(
+            base_url=config.AIDBOX_BASE_URL,
+            client_id=config.AIDBOX_CLIENT_ID,
+            client_secret=config.AIDBOX_CLIENT_SECRET,
+            token=config.AIDBOX_TOKEN,
+            basic=config.AIDBOX_BASIC,
+            timeout=config.AIDBOX_TIMEOUT,
+        )
+
+    def _fhir_check(self):
+        """Probe the Aidbox endpoint and whether the credentials are accepted."""
+        try:
+            client = self._aidbox_client()
+            out = client.ping()
+            out["endpoint"] = client.fhir_base
+            out["has_auth"] = client.has_auth
+            self._json(out)
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
+
+    def _load(self):
+        """Run the load pipeline: source rows -> FHIR -> Aidbox.
+
+        Query string `dry_run=1` builds and counts resources without sending
+        anything. The real load needs Aidbox credentials in .env.
+        """
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        dry = (qs.get("dry_run", ["0"])[0] or "").lower() not in ("0", "false", "")
+        length = int(self.headers.get("Content-Length", "0"))
+        entities = limit = None
+        if length:
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}") or {}
+                entities = body.get("entities") or None
+                limit = body.get("limit") or None
+            except Exception:
+                pass
+        try:
+            import config
+            from src.pipeline import run_pipeline
+            client = None
+            if not dry:
+                client = self._aidbox_client()
+                if not client.has_auth:
+                    return self._json(
+                        {"ok": False, "error": "No Aidbox credentials — set AIDBOX_CLIENT_ID/"
+                         "SECRET (or AIDBOX_TOKEN) in .env, or use Preview (dry-run)."}, 400)
+            res = run_pipeline(
+                structure_map_path=config.STRUCTURE_MAP_PATH,
+                conceptmap_path=config.CONCEPTMAP_PATH,
+                sample_dir=config.PIPELINE_SAMPLE_DIR,
+                client=client,
+                entities=entities,
+                row_limit=int(limit) if limit else None,
+                bundle_size=config.AIDBOX_BUNDLE_SIZE,
+                dry_run=dry,
+            )
+            out = res.to_dict()
+            out.pop("bundles", None)  # keep the response light; summary is enough for the UI
+            self._json(out)
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _generate(self):
         if not (ROOT / "data" / "guide.db").exists():

@@ -11,7 +11,7 @@
 window.SAMPLE_SOURCE_METADATA = {
   engine: "postgresql",
   database: "provider",
-  guide: { package: "fhir.bupa.core", version: "4.6.0", indexed: true },
+  guide: { package: "hl7.fhir.cl.clcore", version: "1.9.3", indexed: true },
   schemas: ["adt", "lis", "pacs", "ris", "integration"],
   tables: [
     { name: "adt.person", rows: 120, role: "entity" },

@@ -549,6 +549,20 @@
           <button class="btn primary" id="generateBtn">Generate structure map</button>
           <span class="sub" id="genResult"></span>
         </div>
+      </div>
+      <div class="panel" id="migratePanel">
+        <h3>Migrate to FHIR server (Aidbox)</h3>
+        <p class="lead">Run the source-agnostic pipeline over the approved map: read the source rows,
+          transform them to FHIR R4, and load them into the server as idempotent upserts. Preview first;
+          the real load needs <code>AIDBOX_CLIENT_ID/SECRET</code> (or <code>AIDBOX_TOKEN</code>) in <code>.env</code>.</p>
+        <p class="sub" id="fhirEndpoint">endpoint: —</p>
+        <div style="margin:12px 0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button class="btn ghost" id="fhirCheckBtn">Check endpoint</button>
+          <button class="btn ghost" id="previewBtn">Preview (dry-run)</button>
+          <button class="btn primary" id="loadBtn">Load to Aidbox</button>
+          <span class="sub" id="migrateStatus"></span>
+        </div>
+        <div id="migrateResult"></div>
       </div>`;
     bindSource();
     refreshGuideStatus();
@@ -634,6 +648,9 @@
     }
     const gen = $("#generateBtn");
     if (gen) gen.addEventListener("click", runGenerate);
+    const fc = $("#fhirCheckBtn"); if (fc) fc.addEventListener("click", runFhirCheck);
+    const pv = $("#previewBtn"); if (pv) pv.addEventListener("click", () => runLoad(true));
+    const ld = $("#loadBtn"); if (ld) ld.addEventListener("click", () => runLoad(false));
   }
 
   function refreshGuideStatus() {
@@ -677,10 +694,16 @@
       .catch((e) => { res.innerHTML = `<span style="color:var(--gap)">Error:</span> ${esc(e.message)}`; });
   }
 
+  // Entities the demo maps live (keeps the agent run small and cheap).
+  const DEMO_ENTITIES = ["Observation", "Condition"];
+
   function runGenerate() {
     const out = $("#genResult");
-    out.textContent = "Running the agent…";
-    fetch("/api/generate", { method: "POST" })
+    out.textContent = `Running the agent (${DEMO_ENTITIES.join(", ")})…`;
+    fetch("/api/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entities: DEMO_ENTITIES })
+    })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
         if (ok && j.ok) {
@@ -695,6 +718,66 @@
         }
       })
       .catch((e) => { out.innerHTML = `<span style="color:var(--gap)">${esc(e.message)}</span>`; });
+  }
+
+  // ---- migrate to FHIR server -------------------------------------------
+  function runFhirCheck() {
+    const ep = $("#fhirEndpoint"), st = $("#migrateStatus");
+    st.textContent = "Checking endpoint…";
+    fetch("/api/fhir-check", { method: "POST" })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ep && j.endpoint) ep.textContent = "endpoint: " + j.endpoint;
+        if (!ok && j.error) { st.innerHTML = `<span style="color:var(--gap)">${esc(j.error)}</span>`; return; }
+        const bits = [];
+        bits.push(j.reachable ? `reachable${j.fhirVersion ? " (FHIR " + esc(j.fhirVersion) + ")" : ""}` : "not reachable");
+        bits.push(j.authenticated ? "authenticated" : (j.has_auth ? "credentials rejected" : "no credentials set"));
+        const colour = j.ok ? "var(--ok, var(--accent))" : "var(--gap)";
+        st.innerHTML = `<span style="color:${colour}">${esc(bits.join(" · "))}</span>`;
+        if (j.detail) st.innerHTML += ` <span class="sub">— ${esc(j.detail)}</span>`;
+      })
+      .catch((e) => { st.innerHTML = `<span style="color:var(--gap)">${esc(e.message)}</span>`; });
+  }
+
+  function runLoad(dry) {
+    const st = $("#migrateStatus"), res = $("#migrateResult");
+    const btns = ["#fhirCheckBtn", "#previewBtn", "#loadBtn"].map($).filter(Boolean);
+    if (!dry && !window.confirm("Load the transformed resources into the FHIR server? Existing resources with the same id are updated in place.")) return;
+    btns.forEach((b) => (b.disabled = true));
+    st.textContent = dry ? "Building resources (no data sent)…" : "Loading to Aidbox…";
+    res.innerHTML = "";
+    fetch("/api/load?dry_run=" + (dry ? "1" : "0"), { method: "POST" })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (!ok || j.ok === false) {
+          st.innerHTML = `<span style="color:var(--gap)">${esc(j.error || "failed")}</span>`;
+          return;
+        }
+        const verb = dry ? "built" : "loaded";
+        st.innerHTML = `<span style="color:var(--ok, var(--accent))">` +
+          `${j.total_loaded}/${j.total_resources} resources ${verb}${dry ? " (dry-run — nothing sent)" : " → " + esc(j.endpoint)}.</span>`;
+        res.innerHTML = renderLoadTable(j, verb);
+        toast(dry ? "Dry-run complete" : "Loaded to Aidbox");
+      })
+      .catch((e) => { st.innerHTML = `<span style="color:var(--gap)">${esc(e.message)}</span>`; })
+      .finally(() => btns.forEach((b) => (b.disabled = false)));
+  }
+
+  function renderLoadTable(j, verb) {
+    const rows = (j.entities || []).map((e) => {
+      const warn = (e.warnings && e.warnings.length) ? `${e.warnings.length} warning(s)` : "";
+      const note = e.error ? `<span style="color:var(--gap)">${esc(e.error)}</span>` : esc(warn);
+      return `<tr><td class="mono">${esc(e.entity)}</td><td>${e.rows}</td>` +
+        `<td>${e.resources}</td><td>${e.loaded}</td><td>${note}</td></tr>`;
+    }).join("");
+    let html = `<table class="detect-table" style="margin-top:6px"><thead><tr>` +
+      `<th>Entity</th><th>Rows</th><th>Resources</th><th>${esc(verb)}</th><th>Notes</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table>`;
+    if (j.errors && j.errors.length) {
+      html += `<div class="sub" style="color:var(--gap); margin-top:8px">` +
+        j.errors.map((x) => esc(x)).join("<br>") + `</div>`;
+    }
+    return html;
   }
 
   function loadFile(file) {

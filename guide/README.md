@@ -5,14 +5,18 @@ The guide store is what the agent validates against. You can load it from a
 
 ## Option A — FHIR IG package (recommended)
 
-Drop the **Bupa Chile Core** package (`fhir.bupa.core` 4.6.0, FHIR R4) here as
-a `.tgz` (npm tarball) or an unpacked folder of FHIR JSON resources, then:
+Drop the **CL Core** package — the Chilean national guide *Guía de Implementación
+cl core* (`hl7.fhir.cl.clcore` 1.9.3, FHIR R4) — here as a `.tgz` (npm tarball) or
+an unpacked folder of FHIR JSON resources, then:
 
 ```bash
-python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+python main.py load-ig guide/clcore.tgz
 # or a folder:
-python main.py load-ig guide/fhir.bupa.core
+python main.py load-ig guide/clcore
 ```
+
+The package ships in this folder as [`clcore.tgz`](clcore.tgz); fetch a different
+version from `https://packages.simplifier.net/hl7.fhir.cl.clcore/<version>`.
 
 The loader ([`src/guide/load_ig.py`](../src/guide/load_ig.py)) reads the IG
 resources and builds the same `guide.db` the tools query:

@@ -63,9 +63,19 @@ def resolve_configs(structure_map_path=None, conceptmap_path=None,
     Precedence: explicit in-memory dicts (what the UI sends) > files on disk >
     the bundled sample (so the button works before any config is saved).
     """
+    def _is_executable(m):
+        # executable maps carry a `source` block per entity so rows can be read;
+        # the UI's review-shape structure_map.json does not.
+        return bool(m) and any((e or {}).get("source") for e in (m.get("maps") or []))
+
     sm = structure_map
     if sm is None and structure_map_path and Path(structure_map_path).exists():
         sm = json.loads(Path(structure_map_path).read_text(encoding="utf-8"))
+    # A review-shape map on disk is not executable — fall back to the executable sample.
+    if sm is not None and not _is_executable(sm) and sample_dir:
+        p = Path(sample_dir) / "structure_map.json"
+        if p.exists():
+            sm = json.loads(p.read_text(encoding="utf-8"))
     if sm is None and sample_dir:
         p = Path(sample_dir) / "structure_map.json"
         if p.exists():

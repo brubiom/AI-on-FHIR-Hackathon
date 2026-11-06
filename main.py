@@ -249,6 +249,19 @@ def main(argv=None) -> int:
     p.add_argument("--json", help="full concept as JSON (Coding, CodeableConcept or row dict)")
     p.set_defaults(func=cmd_suggest)
 
+    p = sub.add_parser("fhir-check", help="Probe the Aidbox endpoint and verify credentials")
+    p.set_defaults(func=cmd_fhir_check)
+
+    p = sub.add_parser("push", help="Load approved map: source rows -> FHIR -> Aidbox")
+    p.add_argument("--dry-run", action="store_true", help="build and count resources; send nothing")
+    p.add_argument("--base-url", help="override the Aidbox base URL from config/.env")
+    p.add_argument("--entity", action="append", help="restrict to this FHIR resource type (repeatable)")
+    p.add_argument("--limit", type=int, default=0, help="max rows per entity (0 = no limit)")
+    p.add_argument("--out", help="dry-run only: write the transaction Bundles to this file")
+    p.add_argument("--quiet", action="store_true", help="suppress per-bundle progress")
+    p.add_argument("--verbose", action="store_true", help="print all warnings")
+    p.set_defaults(func=cmd_push)
+
     args = parser.parse_args(argv)
     return args.func(args)
 

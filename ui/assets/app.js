@@ -21,8 +21,11 @@
     selected: null,      // "map:<i>" | "ref:<i>"
     review: loadReview(), // { "<entity>:<kind>:<i>": {s:'accepted'|'edited'|'rejected', note} }
     termMap: loadTermMap(), // { "<table>|<code>": {system,code,display,score} } accepted standard codes
-    termTarget: "SNOMED"   // page-level target system for suggestions
+    termTarget: "SNOMED",  // page-level target system for suggestions
+    sourceBase: loadSourceBase() // canonical base for the PROVIDER (source) systems
   };
+
+  const DEFAULT_SOURCE_BASE = "https://fhir.provider.example";
 
   function loadTermMap() {
     try { return JSON.parse(localStorage.getItem("sma-termmap") || "{}"); }
@@ -30,6 +33,18 @@
   }
   function saveTermMap() {
     try { localStorage.setItem("sma-termmap", JSON.stringify(state.termMap)); } catch (e) {}
+  }
+  function loadSourceBase() {
+    try { return localStorage.getItem("sma-source-base") || "https://fhir.provider.example"; }
+    catch (e) { return "https://fhir.provider.example"; }
+  }
+  function saveSourceBase() {
+    try { localStorage.setItem("sma-source-base", state.sourceBase); } catch (e) {}
+  }
+  // provider CodeSystem canonical for a source lookup table (ris.modality → .../CodeSystem/ris-modality)
+  function sourceSystem(table) {
+    const base = (state.sourceBase || DEFAULT_SOURCE_BASE).replace(/\/+$/, "");
+    return base + "/CodeSystem/" + String(table).replace(/[^a-zA-Z0-9]+/g, "-");
   }
 
   function loadReview() {
@@ -311,7 +326,13 @@
           </label>
           <span class="sub">${accepted} accepted</span>
           <span class="spacer" style="flex:1"></span>
-          <button class="btn small" id="termExport" ${accepted ? "" : "disabled"}>Export concept map</button>
+          <button class="btn small" id="termExport" ${accepted ? "" : "disabled"}>Export ConceptMap</button>
+        </div>
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+          <label class="sub" for="termSourceBase">Provider source base</label>
+          <input id="termSourceBase" value="${esc(state.sourceBase)}" spellcheck="false"
+            style="flex:1; max-width:460px; font-family:var(--mono); font-size:12px; padding:5px 8px; border:1px solid var(--line); border-radius:6px;">
+          <span class="sub">→ e.g. <code>${esc(sourceSystem("ris.modality"))}</code></span>
         </div>
       </div>`;
 
@@ -380,6 +401,17 @@
     });
     const exp = $("#termExport");
     if (exp) exp.addEventListener("click", exportConceptMap);
+    const base = $("#termSourceBase");
+    if (base) {
+      const update = () => {
+        state.sourceBase = base.value.trim() || DEFAULT_SOURCE_BASE;
+        saveSourceBase();
+        const hint = base.parentElement.querySelector("code");
+        if (hint) hint.textContent = sourceSystem("ris.modality");
+      };
+      base.addEventListener("change", update);
+      base.addEventListener("input", update);
+    }
   }
 
   function bindTerminologyRows() {
@@ -434,7 +466,7 @@
     Object.values(state.termMap).forEach(m => {
       const key = m.src_table + "||" + m.system;
       const g = groups[key] || (groups[key] = {
-        source: "urn:bupa:source:" + m.src_table, target: m.system, element: []
+        source: sourceSystem(m.src_table), target: m.system, element: []
       });
       g.element.push({
         code: String(m.src_code),
@@ -748,7 +780,8 @@
   // skeleton for review — not execution-ready). context.md open item §1.
   function buildStructureMap() {
     const sm = state.structureMap;
-    const structures = [{ url: "urn:bupa:source:provider", mode: "source", alias: "src" }];
+    const providerBase = (state.sourceBase || DEFAULT_SOURCE_BASE).replace(/\/+$/, "");
+    const structures = [{ url: providerBase + "/StructureDefinition/provider-source", mode: "source", alias: "src" }];
     const seen = new Set();
     const groups = [];
     const transformOf = (t) => t === "code-translation" ? "translate"

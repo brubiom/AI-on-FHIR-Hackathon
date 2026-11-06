@@ -1,0 +1,52 @@
+{
+  "resourceType": "ConceptMap",
+  "url": "https://fhir.bupa.cl/ConceptMap/source-to-standard",
+  "name": "SourceToStandardConceptMap",
+  "status": "draft",
+  "experimental": true,
+  "date": "2026-11-06",
+  "description": "Demo ConceptMap for the seeded provider DB (same shape the Terminology tab exports). Fallback only: a reviewed data/conceptmap.json overrides this.",
+  "group": [
+    {
+      "source": "https://fhir.provider.example/CodeSystem/adt-patient-sex",
+      "target": "http://hl7.org/fhir/administrative-gender",
+      "element": [
+        {"code": "M", "display": "Male", "target": [{"code": "male", "display": "Male", "equivalence": "equivalent"}]},
+        {"code": "F", "display": "Female", "target": [{"code": "female", "display": "Female", "equivalence": "equivalent"}]},
+        {"code": "U", "display": "Unknown", "target": [{"code": "unknown", "display": "Unknown", "equivalence": "equivalent"}]},
+        {"code": "O", "display": "Other", "target": [{"code": "other", "display": "Other", "equivalence": "equivalent"}]}
+      ]
+    },
+    {
+      "source": "https://fhir.provider.example/CodeSystem/adt-encounter-class",
+      "target": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+      "element": [
+        {"code": "O", "display": "Outpatient", "target": [{"code": "AMB", "display": "ambulatory", "equivalence": "equivalent"}]},
+        {"code": "E", "display": "Emergency", "target": [{"code": "EMER", "display": "emergency", "equivalence": "equivalent"}]},
+        {"code": "I", "display": "Inpatient", "target": [{"code": "IMP", "display": "inpatient encounter", "equivalence": "equivalent"}]},
+        {"code": "P", "display": "Pre-admit", "target": [{"code": "PRENC", "display": "pre-admission", "equivalence": "equivalent"}]}
+      ]
+    },
+    {
+      "source": "https://fhir.provider.example/CodeSystem/adt-encounter-status",
+      "target": "http://hl7.org/fhir/encounter-status",
+      "element": [
+        {"code": "DISCHARGED", "display": "Discharged", "target": [{"code": "finished", "display": "Finished", "equivalence": "equivalent"}]},
+        {"code": "PREADMIT", "display": "Pre-admitted", "target": [{"code": "planned", "display": "Planned", "equivalence": "equivalent"}]},
+        {"code": "ADMITTED", "display": "Admitted", "target": [{"code": "in-progress", "display": "In progress", "equivalence": "equivalent"}]},
+        {"code": "CANCELLED", "display": "Cancelled", "target": [{"code": "cancelled", "display": "Cancelled", "equivalence": "equivalent"}]}
+      ]
+    },
+    {
+      "source": "https://fhir.provider.example/CodeSystem/lis-result-status",
+      "target": "http://hl7.org/fhir/observation-status",
+      "element": [
+        {"code": "F", "display": "Final", "target": [{"code": "final", "display": "Final", "equivalence": "equivalent"}]},
+        {"code": "P", "display": "Preliminary", "target": [{"code": "preliminary", "display": "Preliminary", "equivalence": "equivalent"}]},
+        {"code": "C", "display": "Corrected", "target": [{"code": "corrected", "display": "Corrected", "equivalence": "equivalent"}]},
+        {"code": "X", "display": "Cancelled", "target": [{"code": "cancelled", "display": "Cancelled", "equivalence": "equivalent"}]},
+        {"code": "I", "display": "In process", "target": [{"code": "registered", "display": "Registered", "equivalence": "equivalent"}]}
+      ]
+    }
+  ]
+}

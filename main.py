@@ -91,7 +91,10 @@ def cmd_agent(args) -> int:
     if not config.GUIDE_DB_PATH.exists():
         print("guide store missing; run `load-guide` first.", file=sys.stderr)
         return 1
-    path = run_to_file(verbose=not args.quiet)
+    entities = getattr(args, "entity", None) or None
+    if entities:
+        print(f"[4/5] scoping to entit{'y' if len(entities) == 1 else 'ies'}: {', '.join(entities)}")
+    path = run_to_file(verbose=not args.quiet, entities=entities)
     print(f"[4/5] structure map -> {path}")
     return 0
 
@@ -129,6 +132,80 @@ def cmd_suggest(args) -> int:
     return 1 if res.analysis.get("degraded") and not res.suggestions else 0
 
 
+def cmd_fhir_check(_args) -> int:
+    """Probe the Aidbox endpoint and verify the credentials are accepted."""
+    from src.pipeline import AidboxClient
+
+    client = AidboxClient(
+        base_url=config.AIDBOX_BASE_URL,
+        client_id=config.AIDBOX_CLIENT_ID,
+        client_secret=config.AIDBOX_CLIENT_SECRET,
+        token=config.AIDBOX_TOKEN,
+        basic=config.AIDBOX_BASIC,
+        timeout=config.AIDBOX_TIMEOUT,
+    )
+    p = client.ping()
+    print(f"endpoint   : {client.fhir_base}")
+    print(f"reachable  : {p['reachable']}  (fhirVersion={p.get('fhirVersion')})")
+    print(f"authenticated: {p['authenticated']}")
+    print(f"detail     : {p['detail']}")
+    return 0 if p["ok"] else 1
+
+
+def cmd_push(args) -> int:
+    """Run the load pipeline: source DB -> FHIR -> Aidbox (config-driven)."""
+    from src.pipeline import AidboxClient, run_pipeline
+
+    client = None
+    if not args.dry_run:
+        client = AidboxClient(
+            base_url=args.base_url or config.AIDBOX_BASE_URL,
+            client_id=config.AIDBOX_CLIENT_ID,
+            client_secret=config.AIDBOX_CLIENT_SECRET,
+            token=config.AIDBOX_TOKEN,
+            basic=config.AIDBOX_BASIC,
+            timeout=config.AIDBOX_TIMEOUT,
+        )
+        if not client.has_auth:
+            print("no Aidbox credentials set — put AIDBOX_CLIENT_ID/SECRET in .env "
+                  "(or use --dry-run to preview).", file=sys.stderr)
+            return 1
+
+    res = run_pipeline(
+        structure_map_path=config.STRUCTURE_MAP_PATH,
+        conceptmap_path=config.CONCEPTMAP_PATH,
+        sample_dir=config.PIPELINE_SAMPLE_DIR,
+        client=client,
+        entities=args.entity or None,
+        row_limit=args.limit if args.limit and args.limit > 0 else None,
+        bundle_size=config.AIDBOX_BUNDLE_SIZE,
+        dry_run=args.dry_run,
+        on_progress=(lambda m: print(f"  … {m}")) if not args.quiet else None,
+    )
+
+    mode = "DRY-RUN (no data sent)" if args.dry_run else f"-> {res.endpoint}"
+    print(f"\n[6/6] load pipeline {mode}")
+    for e in res.entities:
+        line = f"      {e['entity']:<12} rows={e['rows']:<4} resources={e['resources']:<4} loaded={e['loaded']:<4}"
+        if e.get("error"):
+            line += f"  ERROR: {e['error']}"
+        elif e["warnings"]:
+            line += f"  ({len(e['warnings'])} warning(s))"
+        print(line)
+    if res.warnings and args.verbose:
+        print("      --- warnings ---")
+        for w in res.warnings:
+            print(f"      ! {w}")
+    print(f"      total: {res.total_loaded}/{res.total_resources} resources "
+          f"{'built' if args.dry_run else 'loaded'}")
+    if args.dry_run and args.out:
+        import json as _json
+        Path = __import__("pathlib").Path
+        Path(args.out).write_text(_json.dumps(res.bundles, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"      bundles written to {args.out}")
+    return 0 if res.ok else 1
+
+
 def cmd_all(args) -> int:
     for step in (cmd_build_db, cmd_extract, cmd_load_guide, cmd_agent, cmd_review):
         rc = step(args)
@@ -155,6 +232,10 @@ def main(argv=None) -> int:
         p.add_argument("--quiet", action="store_true", help="suppress agent tool-call trace")
         if name == "load-ig":
             p.add_argument("path", nargs="?", help="path to the FHIR IG .tgz or folder")
+        if name in ("agent", "all"):
+            p.add_argument("--entity", action="append",
+                           help="limit mapping to this entity (repeatable, e.g. --entity Patient); "
+                                "keeps output small and cheap")
         p.set_defaults(func=fn)
 
     p = sub.add_parser("suggest", help="Suggest up to 3 standard concepts for one source concept (Termbox)")

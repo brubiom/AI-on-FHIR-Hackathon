@@ -84,12 +84,20 @@ be valid JSON and nothing else.
 """
 
 
-def build_user_message(source_metadata_json: str) -> str:
+def build_user_message(source_metadata_json: str, entities: list[str] | None = None) -> str:
+    scope = ""
+    if entities:
+        names = ", ".join(entities)
+        scope = (
+            f"\n\nSCOPE: map ONLY the following entit{'y' if len(entities) == 1 else 'ies'}: "
+            f"{names}. Emit exactly one entity map per requested entity and ignore all other "
+            "source tables. Keep rationale and terminology_notes concise (one or two sentences)."
+        )
     return (
         "Here is the source database metadata (source_metadata.json). It is "
         "ground truth — treat types, nullability, FKs and lookup contents as "
         "facts.\n\n"
         "```json\n" + source_metadata_json + "\n```\n\n"
         "Produce the structure map as specified. Query the guide with the tools "
-        "for every FHIR field fact before you cite it."
+        "for every FHIR field fact before you cite it." + scope
     )

@@ -28,3 +28,9 @@ venv/
 .fseventsd
 .DocumentRevisions-V100
 .TemporaryItems
+
+# synthetic demo IG (not the real guide)
+/guide/_demo_ig/
+
+# downloaded IG packages
+/guide/*.tgz

@@ -1,0 +1,178 @@
+{
+  "generated_at": "2026-11-06",
+  "source_base": "https://fhir.provider.example",
+  "fhir_version": "4.0.1",
+  "note": "Executable demo map for the seeded provider DB. Fallback only: a reviewed data/structure_map.json overrides this. It is a superset of the review shape — each entity adds a `source` block so the pipeline can read the rows.",
+  "maps": [
+    {
+      "entity": "Patient",
+      "target_profile": "patient-bupa",
+      "source": {
+        "table": "adt.patient",
+        "query": "SELECT patient_id, mrn, last_name, first_name, dob, sex, mobile_phone, email FROM adt.patient WHERE active = true",
+        "id_column": "patient_id",
+        "id_prefix": "pat"
+      },
+      "mappings": [
+        {
+          "source": {"table": "adt.patient", "column": "mrn"},
+          "target": {"element": "Patient.identifier", "type": "Identifier"},
+          "transform": "identifier",
+          "system": "https://fhir.provider.example/sid/mrn",
+          "use": "usual",
+          "required": true
+        },
+        {
+          "source": {"table": "adt.patient", "column": "last_name"},
+          "target": {"element": "Patient.name.family", "type": "string"},
+          "transform": "direct"
+        },
+        {
+          "source": {"table": "adt.patient", "column": "first_name"},
+          "target": {"element": "Patient.name.given", "type": "string"},
+          "transform": "direct"
+        },
+        {
+          "source": {"table": "adt.patient", "column": "dob"},
+          "target": {"element": "Patient.birthDate", "type": "date"},
+          "transform": "direct"
+        },
+        {
+          "source": {"table": "adt.patient", "column": "sex"},
+          "target": {"element": "Patient.gender", "type": "code"},
+          "transform": "code-translation",
+          "concept_map_source": "https://fhir.provider.example/CodeSystem/adt-patient-sex",
+          "default": "unknown"
+        },
+        {
+          "source": {"table": "adt.patient", "column": "mobile_phone"},
+          "target": {"element": "Patient.telecom", "type": "ContactPoint"},
+          "transform": "phone",
+          "use": "mobile"
+        },
+        {
+          "source": {"table": "adt.patient", "column": "email"},
+          "target": {"element": "Patient.telecom", "type": "ContactPoint"},
+          "transform": "email"
+        }
+      ],
+      "references": []
+    },
+    {
+      "entity": "Encounter",
+      "target_profile": "encounter-bupa",
+      "source": {
+        "table": "adt.encounter",
+        "query": "SELECT encounter_id, visit_number, patient_id, patient_class, status, admit_dt, discharge_dt FROM adt.encounter",
+        "id_column": "encounter_id",
+        "id_prefix": "enc"
+      },
+      "mappings": [
+        {
+          "source": {"table": "adt.encounter", "column": "visit_number"},
+          "target": {"element": "Encounter.identifier", "type": "Identifier"},
+          "transform": "identifier",
+          "system": "https://fhir.provider.example/sid/visit-number",
+          "required": true
+        },
+        {
+          "source": {"table": "adt.encounter", "column": "status"},
+          "target": {"element": "Encounter.status", "type": "code"},
+          "transform": "code-translation",
+          "concept_map_source": "https://fhir.provider.example/CodeSystem/adt-encounter-status",
+          "default": "unknown"
+        },
+        {
+          "source": {"table": "adt.encounter", "column": "patient_class"},
+          "target": {"element": "Encounter.class", "type": "Coding"},
+          "transform": "code-translation",
+          "concept_map_source": "https://fhir.provider.example/CodeSystem/adt-encounter-class",
+          "default": "AMB",
+          "default_system": "http://terminology.hl7.org/CodeSystem/v3-ActCode"
+        },
+        {
+          "source": {"table": "adt.encounter", "column": "admit_dt"},
+          "target": {"element": "Encounter.period.start", "type": "dateTime"},
+          "transform": "direct"
+        },
+        {
+          "source": {"table": "adt.encounter", "column": "discharge_dt"},
+          "target": {"element": "Encounter.period.end", "type": "dateTime"},
+          "transform": "direct"
+        }
+      ],
+      "references": [
+        {
+          "column": "patient_id",
+          "target": {"element": "Encounter.subject", "type": "Reference"},
+          "reference_to": {"entity": "Patient", "id_prefix": "pat"}
+        }
+      ]
+    },
+    {
+      "entity": "Observation",
+      "target_profile": "observation-lab-bupa",
+      "source": {
+        "table": "lis.result",
+        "query": "SELECT r.result_id, tc.loinc_code, tc.test_name, r.value_num, r.value_text, r.units, r.result_status, r.performed_dt, lo.patient_id, lo.encounter_id FROM lis.result r JOIN lis.order_item oi ON oi.order_item_id = r.order_item_id JOIN lis.lab_order lo ON lo.order_id = oi.order_id JOIN lis.test_catalog tc ON tc.test_id = r.test_id WHERE tc.loinc_code IS NOT NULL",
+        "id_column": "result_id",
+        "id_prefix": "obs"
+      },
+      "mappings": [
+        {
+          "source": {"table": "lis.result", "column": "result_status"},
+          "target": {"element": "Observation.status", "type": "code"},
+          "transform": "code-translation",
+          "concept_map_source": "https://fhir.provider.example/CodeSystem/lis-result-status",
+          "default": "unknown"
+        },
+        {
+          "target": {"element": "Observation.category", "type": "CodeableConcept"},
+          "transform": "fixed",
+          "value": [
+            {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                  "code": "laboratory",
+                  "display": "Laboratory"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "source": {"table": "lis.result", "column": "loinc_code"},
+          "target": {"element": "Observation.code", "type": "CodeableConcept"},
+          "transform": "coding",
+          "system": "http://loinc.org",
+          "display_column": "test_name",
+          "required": true
+        },
+        {
+          "source": {"table": "lis.result", "column": "performed_dt"},
+          "target": {"element": "Observation.effectiveDateTime", "type": "dateTime"},
+          "transform": "direct"
+        },
+        {
+          "source": {"table": "lis.result", "column": "value_num"},
+          "target": {"element": "Observation.valueQuantity", "type": "Quantity"},
+          "transform": "quantity",
+          "unit_column": "units"
+        }
+      ],
+      "references": [
+        {
+          "column": "patient_id",
+          "target": {"element": "Observation.subject", "type": "Reference"},
+          "reference_to": {"entity": "Patient", "id_prefix": "pat"}
+        },
+        {
+          "column": "encounter_id",
+          "target": {"element": "Observation.encounter", "type": "Reference"},
+          "reference_to": {"entity": "Encounter", "id_prefix": "enc"}
+        }
+      ]
+    }
+  ]
+}

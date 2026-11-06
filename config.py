@@ -76,3 +76,31 @@ TERMBOX_MIN_SCORE = float(os.getenv("TERMBOX_MIN_SCORE", "0.35"))
 
 # --- Step 5: review view ----------------------------------------------------
 REVIEW_HTML_PATH = DATA_DIR / "review.html"
+
+# --- Step 6: load pipeline (source DB -> FHIR -> Aidbox) ---------------------
+# The pipeline is CONFIG-DRIVEN and source-agnostic: it executes whatever
+# structure_map.json (column -> FHIR element) and conceptmap.json (source code
+# -> standard code) the reviewer approved. Swap the source and re-run the agent;
+# the same pipeline migrates the new data with no code change.
+# STRUCTURE_MAP_PATH is defined in the agent section above; the load step reuses it.
+CONCEPTMAP_PATH = DATA_DIR / "conceptmap.json"
+
+# Fallback demo configs (used only when data/ has no approved config yet) so the
+# "Create pipeline" button works end-to-end against the seeded provider DB.
+PIPELINE_SAMPLE_DIR = ROOT / "src" / "pipeline" / "sample"
+
+# Aidbox FHIR endpoint. Every value is overridable at run time (the UI sends the
+# endpoint it has in its field), so nothing here is baked into the engine.
+AIDBOX_BASE_URL = os.getenv("AIDBOX_BASE_URL", "https://dakwjlidfo.aidbox.app").rstrip("/")
+# Basic auth with an Aidbox Client (client_id:secret). Create a Client resource
+# with an AccessPolicy in Aidbox, then put its id/secret here or in the UI.
+AIDBOX_CLIENT_ID = os.getenv("AIDBOX_CLIENT_ID", "")
+AIDBOX_CLIENT_SECRET = os.getenv("AIDBOX_CLIENT_SECRET", "")
+# Alternatives (optional): a pre-issued bearer token, or raw "user:pass" Basic.
+AIDBOX_TOKEN = os.getenv("AIDBOX_TOKEN", "")
+AIDBOX_BASIC = os.getenv("AIDBOX_BASIC", "")
+# Resources per transaction Bundle POST (keeps payloads bounded).
+AIDBOX_BUNDLE_SIZE = int(os.getenv("AIDBOX_BUNDLE_SIZE", "100"))
+AIDBOX_TIMEOUT = float(os.getenv("AIDBOX_TIMEOUT", "60"))
+# Safety cap on rows read per entity (None/0 = all). The UI can lower it.
+PIPELINE_ROW_LIMIT = int(os.getenv("PIPELINE_ROW_LIMIT", "0")) or None

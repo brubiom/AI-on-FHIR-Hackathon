@@ -44,9 +44,14 @@ def run(
     max_tokens: int = config.AGENT_MAX_TOKENS,
     max_turns: int = config.AGENT_MAX_TURNS,
     store: GuideStore | None = None,
+    entities: list[str] | None = None,
     verbose: bool = True,
 ) -> dict:
-    """Run the agent and return the parsed structure_map dict."""
+    """Run the agent and return the parsed structure_map dict.
+
+    entities: optional list of entity names to scope the mapping to (keeps the
+    output small and cheap; recommended for a single-entity end-to-end run).
+    """
     import anthropic
 
     if isinstance(source_metadata, (str, Path)):
@@ -69,7 +74,7 @@ def run(
 
     client = anthropic.Anthropic()
 
-    messages = [{"role": "user", "content": build_user_message(metadata_json)}]
+    messages = [{"role": "user", "content": build_user_message(metadata_json, entities)}]
     final_text = None
 
     for turn in range(1, max_turns + 1):
@@ -110,6 +115,18 @@ def run(
         final_text = "".join(b.text for b in response.content if b.type == "text")
         if verbose:
             print(f"  [turn {turn}] final message ({response.stop_reason})")
+        if response.stop_reason == "max_tokens":
+            # Save the truncated output for inspection, then fail with guidance.
+            try:
+                (config.STRUCTURE_MAP_PATH.with_suffix(".partial.txt")).write_text(
+                    final_text, encoding="utf-8")
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"the model hit max_tokens ({max_tokens}) — the output was truncated. "
+                "Scope the run to fewer entities (e.g. `--entity Patient`) or raise "
+                "AGENT_MAX_TOKENS. A truncated draft was saved alongside structure_map.json."
+            )
         break
     else:
         raise RuntimeError(f"agent did not finish within {max_turns} turns")

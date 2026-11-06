@@ -176,9 +176,17 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"ok": False, "error": "no source_metadata.json — start the DB and extract first"}, 400)
         if not os.getenv("ANTHROPIC_API_KEY"):
             return self._json({"ok": False, "error": "set ANTHROPIC_API_KEY to run the agent"}, 400)
+        length = int(self.headers.get("Content-Length", "0"))
+        entities = None
+        if length:
+            try:
+                entities = (json.loads(self.rfile.read(length)) or {}).get("entities") or None
+            except Exception:
+                entities = None
         try:
             from src.agent.agent import run_to_file
-            run_to_file(source_metadata=ROOT / "data" / "source_metadata.json", verbose=False)
+            run_to_file(source_metadata=ROOT / "data" / "source_metadata.json",
+                        entities=entities, verbose=False)
             surface_structure_map()
             self._json({"ok": True})
         except Exception as exc:

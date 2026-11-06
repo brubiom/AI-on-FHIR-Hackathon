@@ -44,6 +44,11 @@ guide CSVs ──► guide.db ──► Phase B tools ────────�
   `localhost:5440/provider`) simulating a hospital's ADT/LIS/RIS/PACS/interface
   engine, plus spreadsheet code lists in `src/source_db/vocab/*.csv`. This is the
   "disparate data" the terminology integration is designed for.
+- **`ui/`** — the web workbench (connect, map, review, export, migrate) served by
+  `serve.py` with a small JSON API (`/api/connect`, `/api/load-ig`, `/api/generate`,
+  `/api/suggest`, `/api/fhir-check`, `/api/load`).
+- **`src/pipeline/`** — the source-agnostic load pipeline: the approved map → FHIR R4
+  resources → an Aidbox FHIR server (idempotent transaction upserts).
 
 ## Run with Docker (recommended)
 
@@ -58,7 +63,29 @@ docker compose run --rm app python main.py load-ig guide/clcore.tgz
 docker compose run --rm app python main.py agent
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full flow.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full flow, and
+[`docs/Know_your_guidelines.pdf`](docs/Know_your_guidelines.pdf) for a primer on the
+implementation guides.
+
+## Live demo (the web workbench)
+
+`docker compose up --build` serves a workbench at **http://localhost:8000** that runs the
+whole flow live, from a blank environment:
+
+1. **Source → Connect database** — connects to the provider Postgres and explores it live
+   (tables, candidate entities, lookups). Or drop a `source_metadata.json`.
+2. **Load the Implementation Guide** — drop the CL Core `.tgz`; the guide store is built.
+3. **Generate structure map** — the agent maps the chosen resources (e.g. Observation,
+   Condition) against the guide + terminology, fully cited, with a confidence meter. Needs
+   `ANTHROPIC_API_KEY`; the run's real token cost is reported.
+4. **Review** — Mapping, Gaps and **Terminology** tabs; accept / edit / reject; export a
+   FHIR **ConceptMap** and a FHIR **StructureMap**.
+5. **Migrate to Aidbox** — the source-agnostic pipeline reads the live rows, builds FHIR R4
+   resources and loads them into an Aidbox server as idempotent upserts. **Preview (dry-run)**
+   is free and offline-safe; the real load needs Aidbox credentials in `.env`.
+
+Only the agent (step 3) uses the Anthropic API — connect, guide load, terminology, preview
+and the Aidbox load cost nothing.
 
 ## Setup (without Docker)
 
@@ -205,8 +232,8 @@ result_json = term.dispatch(block.name, block.input) if term.handles(block.name)
 
 The tool is named `sugerir_conceptos` and has a strict schema:
 `{concept: {code, system, display, synonyms, context}, target_systems, max_suggestions}`.
-It is **not wired into the structure-map agent yet**, so add it to `src/agent/agent.py`
-when the mapping workflow needs terminology. Cite results as
+It **is wired into the structure-map agent** (`src/agent/agent.py`): the agent calls it
+for code and lookup columns and cites results as
 `{"source": "termbox", "ref": "<system>|<code>"}`.
 
 ### CLI (manual testing)

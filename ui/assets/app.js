@@ -14,10 +14,11 @@
   const STORAGE_KEY = "sma-review-state";
 
   const state = {
-    structureMap: window.SAMPLE_STRUCTURE_MAP,
-    sourceMeta: window.SAMPLE_SOURCE_METADATA,
+    structureMap: { generated_at: "", maps: [] }, // blank until generated live
+    sourceMeta: null,                              // null until the DB is connected live
+    connected: false,
     entityIndex: 0,
-    tab: "mapping",      // source | mapping | gaps
+    tab: "source",       // the demo starts on the Source tab (connect live)
     selected: null,      // "map:<i>" | "ref:<i>"
     review: loadReview(), // { "<entity>:<kind>:<i>": {s:'accepted'|'edited'|'rejected', note} }
     termMap: loadTermMap(), // { "<table>|<code>": {system,code,display,score} } accepted standard codes
@@ -530,6 +531,28 @@
   function lookupName(x) { return typeof x === "string" ? x : (x && x.table) || ""; }
 
   function renderSource() {
+    $("#stage").className = "stage";
+
+    // Step 1 — not connected yet: just the Connect action (blank environment).
+    if (!state.connected) {
+      $("#stage").innerHTML = `
+        <div class="panel">
+          <h3>Connect the source database</h3>
+          <p class="lead">Connect to the live provider database to explore its schema and detect
+            candidate entities. Or drop a <code>source_metadata.json</code>.</p>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <button class="btn primary" id="connectBtn">Connect database</button>
+            <span class="sub" id="connectStatus"></span>
+          </div>
+          <div class="dropzone" id="dropzone" style="margin-top:16px">Or drop a .json here, or click to choose a file
+            <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
+          </div>
+        </div>`;
+      bindSource();
+      return;
+    }
+
+    // Step 2+ — connected: live detection summary, guide, generate, migrate.
     const meta = state.sourceMeta || {};
     const tables = (meta.tables || []).map(t => ({
       name: t.name,
@@ -538,17 +561,9 @@
     }));
     const entities = meta.candidate_entities || [];
     const lookups = (meta.lookups || []).map(lookupName);
-    $("#stage").className = "stage";
     $("#stage").innerHTML = `
       <div class="panel">
-        <h3>Connect or upload</h3>
-        <p class="lead">Point at a database or drop its metadata to begin. Drop a <code>source_metadata.json</code> or a <code>structure_map.json</code>.</p>
-        <div class="dropzone" id="dropzone">Drop a .json here, or click to choose a file
-          <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
-        </div>
-      </div>
-      <div class="panel">
-        <h3>Detection summary</h3>
+        <h3>Detection summary <span class="sub">— connected live</span></h3>
         <p class="lead">${esc(meta.engine || "—")} · database <span class="mono">${esc(meta.database || "—")}</span></p>
         <div class="kpi-row">
           <div class="kpi"><div class="n">${tables.length}</div><div class="l">tables</div></div>
@@ -654,6 +669,8 @@
   }
 
   function bindSource() {
+    const cb = $("#connectBtn");
+    if (cb) cb.addEventListener("click", runConnect);
     const dz = $("#dropzone"), fi = $("#fileInput");
     if (dz && fi) {
       dz.addEventListener("click", () => fi.click());
@@ -676,6 +693,24 @@
     const fc = $("#fhirCheckBtn"); if (fc) fc.addEventListener("click", runFhirCheck);
     const pv = $("#previewBtn"); if (pv) pv.addEventListener("click", () => runLoad(true));
     const ld = $("#loadBtn"); if (ld) ld.addEventListener("click", () => runLoad(false));
+  }
+
+  function runConnect() {
+    const st = $("#connectStatus");
+    if (st) st.textContent = "Connecting and exploring the database…";
+    fetch("/api/connect", { method: "POST" })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ok && j.ok) {
+          state.sourceMeta = j;
+          state.connected = true;
+          toast(`Connected — ${(j.tables || []).length} tables detected`);
+          renderSource();
+        } else if (st) {
+          st.innerHTML = `<span style="color:var(--gap)">${esc(j.error || "connection failed")}</span>`;
+        }
+      })
+      .catch((e) => { if (st) st.innerHTML = `<span style="color:var(--gap)">needs the running server: ${esc(e.message)}</span>`; });
   }
 
   function refreshGuideStatus() {
@@ -816,6 +851,8 @@
           toast(`Loaded structure map (${file.name})`);
         } else if (data.tables) {
           state.sourceMeta = data;
+          state.connected = true;
+          state.tab = "source";
           toast(`Loaded source metadata (${file.name})`);
         } else {
           toast("Unrecognized JSON shape");
@@ -1014,18 +1051,24 @@
   }
 
   function bootstrap() {
-    let served = false, gotMap = false;
-    Promise.all([
-      tryLoad("./data/source_metadata.json", (d) => { if (d && d.tables) { state.sourceMeta = d; served = true; } }),
-      tryLoad("./data/structure_map.json", (d) => {
-        if (d && d.maps) { state.structureMap = d; gotMap = true; }
-        else if (d && d.entity) { state.structureMap = { generated_at: d.generated_at || "", maps: [d] }; gotMap = true; }
-      })
-    ]).then(() => {
-      // Running on the platform with no map yet → start blank (map live in the demo).
-      if (served && !gotMap) state.structureMap = { generated_at: "", maps: [] };
-      render();
-    });
+    // Detect whether we're served by the platform (the /api is reachable).
+    fetch("/api/guide-status", { cache: "no-store" })
+      .then((r) => r.ok).catch(() => false)
+      .then((served) => {
+        if (!served) {
+          // Standalone (file://) — fall back to the bundled samples so the page still demos.
+          state.sourceMeta = window.SAMPLE_SOURCE_METADATA;
+          state.structureMap = window.SAMPLE_STRUCTURE_MAP;
+          state.connected = true;
+          render();
+          return;
+        }
+        // Served: start blank (connect + generate live). Pick up an existing map if present.
+        tryLoad("./data/structure_map.json", (d) => {
+          if (d && d.maps) state.structureMap = d;
+          else if (d && d.entity) state.structureMap = { generated_at: d.generated_at || "", maps: [d] };
+        }).then(render);
+      });
   }
 
   document.addEventListener("DOMContentLoaded", init);

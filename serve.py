@@ -124,6 +124,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         route = self.path.split("?")[0]
+        if route == "/api/connect":
+            return self._connect()
         if route == "/api/load-ig":
             return self._load_ig()
         if route == "/api/generate":
@@ -135,6 +137,18 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/api/load":
             return self._load()
         self._json({"ok": False, "error": "not found"}, 404)
+
+    def _connect(self):
+        """Connect to the source DB and extract its metadata live."""
+        try:
+            if not extract_metadata():
+                return self._json({"ok": False, "error": "could not extract source metadata "
+                                   "(is the database reachable?)"}, 500)
+            data = json.loads((UI_DATA / "source_metadata.json").read_text(encoding="utf-8"))
+            data["ok"] = True
+            self._json(data)
+        except Exception as exc:
+            self._json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _suggest(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -292,26 +306,26 @@ def main(argv=None) -> int:
 
     print("Starting the Structure Map Agent platform…")
     in_docker = bool(os.getenv("APP_IN_DOCKER") or os.getenv("PGHOST"))
+
+    # Start BLANK: no pre-loaded summary or map. The DB is connected live from
+    # the Source tab (POST /api/connect), the map is generated live, then migrated.
+    try:
+        UI_DATA.mkdir(parents=True, exist_ok=True)
+        for f in ("source_metadata.json", "structure_map.json"):
+            p = UI_DATA / f
+            if p.exists():
+                p.unlink()
+    except Exception:
+        pass
+
     if args.no_db:
-        print("[1-2/3] --no-db: using bundled sample data.")
+        print("[1/2] --no-db: no database; use the upload option in the Source tab.")
     elif in_docker:
-        # compose guarantees the db service is healthy before we start
-        print("[1/3] database managed by docker compose (depends_on healthy).")
-        print("[2/3] extracting live source metadata…")
-        extract_metadata()
+        print("[1/2] database managed by docker compose; connect it live from the UI.")
     else:
-        print("[1/3] ensuring the provider database is up…")
-        if ensure_db():
-            print("[2/3] extracting live source metadata…")
-            extract_metadata()
-        else:
-            print("[2/3] skipped extraction.")
-    if surface_structure_map():
-        print("      found data/structure_map.json → serving the real map.")
-    else:
-        print("      no structure_map.json yet → Mapping tab shows the sample "
-              "(load a guide + run `python main.py agent`).")
-    print("[3/3] serving the UI…")
+        print("[1/2] ensuring the provider database is up…")
+        ensure_db()
+    print("[2/2] serving the UI (blank — connect the DB from the Source tab)…")
     serve(args.port, not args.no_open)
     return 0
 

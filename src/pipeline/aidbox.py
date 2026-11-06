@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import ssl
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -40,6 +43,11 @@ class AidboxClient:
     def __post_init__(self) -> None:
         self.base_url = (self.base_url or "").rstrip("/")
         self._auth_header = self._build_auth()
+        # Transport hardening for flaky TLS (self-signed cert in chain, corporate
+        # proxy, transient resets). AIDBOX_INSECURE=1 skips cert verification.
+        insecure = os.getenv("AIDBOX_INSECURE", "").lower() in ("1", "true", "yes")
+        self._ssl_ctx = ssl._create_unverified_context() if insecure else None
+        self._retries = max(1, int(os.getenv("AIDBOX_RETRIES", "3")))
 
     # -- base URLs -----------------------------------------------------------
     @property
@@ -74,21 +82,30 @@ class AidboxClient:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/fhir+json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8")
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", "replace")
+        last_exc = None
+        for attempt in range(self._retries):
             try:
-                parsed = json.loads(raw)
-            except ValueError:
-                parsed = raw
-            raise AidboxError(
-                f"Aidbox {method} {url} -> HTTP {exc.code}", status=exc.code, body=parsed
-            ) from None
-        except urllib.error.URLError as exc:
-            raise AidboxError(f"cannot reach Aidbox at {url}: {exc.reason}") from None
+                with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_ctx) as resp:
+                    raw = resp.read().decode("utf-8")
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as exc:
+                # HTTP status errors are not transient — do not retry.
+                raw = exc.read().decode("utf-8", "replace")
+                try:
+                    parsed = json.loads(raw)
+                except ValueError:
+                    parsed = raw
+                raise AidboxError(
+                    f"Aidbox {method} {url} -> HTTP {exc.code}", status=exc.code, body=parsed
+                ) from None
+            except (urllib.error.URLError, ssl.SSLError, ConnectionError, TimeoutError) as exc:
+                # Transient transport failure (TLS blip, reset, timeout): retry.
+                last_exc = exc
+                if attempt < self._retries - 1:
+                    time.sleep(0.6 * (attempt + 1))
+                    continue
+        reason = getattr(last_exc, "reason", last_exc)
+        raise AidboxError(f"cannot reach Aidbox at {url}: {reason}") from None
 
     # -- operations ----------------------------------------------------------
     def capability(self) -> dict:

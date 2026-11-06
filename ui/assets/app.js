@@ -802,7 +802,7 @@
 
   function runLoad(dry) {
     const st = $("#migrateStatus"), res = $("#migrateResult");
-    const btns = ["#fhirCheckBtn", "#previewBtn", "#loadBtn"].map($).filter(Boolean);
+    const btns = ["#fhirCheckBtn", "#previewBtn", "#loadBtn"].map((s) => $(s)).filter(Boolean);
     if (!dry && !window.confirm("Load the transformed resources into the FHIR server? Existing resources with the same id are updated in place.")) return;
     btns.forEach((b) => (b.disabled = true));
     st.textContent = dry ? "Building resources (no data sent)…" : "Loading to Aidbox…";

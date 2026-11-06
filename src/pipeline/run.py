@@ -117,6 +117,7 @@ def run_pipeline(
                              structure_map, conceptmap, sample_dir)
     cm_index = ConceptMapIndex(cm)
     base = sm.get("source_base") or "https://fhir.provider.example"
+    tz = sm.get("source_timezone") or None  # None -> engine default (-03:00)
     result = PipelineResult(dry_run=dry_run, endpoint=(client.fhir_base if client else ""))
 
     wanted = set(entities) if entities else None
@@ -138,7 +139,8 @@ def run_pipeline(
             continue
         summary["rows"] = len(rows)
 
-        resources, warnings = build_entity_resources(entity, rows, cm_index, base)
+        resources, warnings = build_entity_resources(
+            entity, rows, cm_index, base, *( (tz,) if tz else () ))
         summary["resources"] = len(resources)
         summary["warnings"] = warnings
         result.warnings.extend(f"{name}: {w}" for w in warnings)

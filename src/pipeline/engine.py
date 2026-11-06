@@ -33,6 +33,23 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SOURCE_BASE = "https://fhir.provider.example"
+# FHIR `dateTime`/`instant` with a time component MUST carry a timezone, but SQL
+# `timestamp without time zone` columns arrive as 'YYYY-MM-DDThh:mm:ss' (no offset)
+# and Aidbox rejects them ("Datetime is too short: no timezone."). Append this
+# offset to timezone-less source datetimes. Override per map with `source_timezone`.
+DEFAULT_SOURCE_TZ = "-03:00"  # America/Santiago (Chile) standard offset
+_DATETIME_NO_TZ = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$")
+
+
+def _ensure_datetime_tz(value: Any, tz: str) -> Any:
+    """Append `tz` to a timezone-less datetime string; leave everything else.
+
+    A bare date ('YYYY-MM-DD', no 'T') has no time and stays as-is; non-datetime
+    strings never match the pattern, so names/text/codes pass through untouched.
+    """
+    if isinstance(value, str) and _DATETIME_NO_TZ.match(value):
+        return value + (tz or DEFAULT_SOURCE_TZ)
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -149,7 +166,8 @@ def _coding_placement(rule: dict, coding: dict) -> tuple[str, Any]:
 
 
 def build_rule_value(rule: dict, row: dict, cm: ConceptMapIndex,
-                     source_base: str, table_hint: str, warnings: list) -> tuple[str, Any] | None:
+                     source_base: str, table_hint: str, warnings: list,
+                     source_tz: str = DEFAULT_SOURCE_TZ) -> tuple[str, Any] | None:
     transform = rule.get("transform", "direct")
     element = (rule.get("target") or {}).get("element", "")
     col = (rule.get("source") or {}).get("column")
@@ -170,7 +188,7 @@ def build_rule_value(rule: dict, row: dict, cm: ConceptMapIndex,
             return ("name-family", raw)
         if element.endswith(".name.given"):
             return ("name-given", raw)
-        return ("set", raw)
+        return ("set", _ensure_datetime_tz(raw, source_tz))
 
     if transform == "identifier":
         ident = {"value": str(raw)}
@@ -247,7 +265,8 @@ def _dominant_table(entity: dict) -> str:
 
 
 def build_entity_resources(entity: dict, rows: list[dict], cm: ConceptMapIndex,
-                           source_base: str) -> tuple[list[dict], list[str]]:
+                           source_base: str,
+                           source_tz: str = DEFAULT_SOURCE_TZ) -> tuple[list[dict], list[str]]:
     """Turn one entity's source rows into FHIR resources (+ warnings)."""
     rtype = entity["entity"]
     esource = entity.get("source") or {}
@@ -264,7 +283,7 @@ def build_entity_resources(entity: dict, rows: list[dict], cm: ConceptMapIndex,
             res["meta"] = {"profile": [entity["profile_url"]]}
 
         for rule in entity.get("mappings", []):
-            built = build_rule_value(rule, row, cm, source_base, table_hint, warnings)
+            built = build_rule_value(rule, row, cm, source_base, table_hint, warnings, source_tz)
             if built:
                 kind, value = built
                 if value is not None:
@@ -295,11 +314,12 @@ def build_resources(structure_map: dict, conceptmap: dict | None,
     """Build resources for every entity that has rows. Returns {entity: {...}}."""
     cm = ConceptMapIndex(conceptmap)
     base = structure_map.get("source_base") or DEFAULT_SOURCE_BASE
+    tz = structure_map.get("source_timezone") or DEFAULT_SOURCE_TZ
     out: dict[str, dict] = {}
     for entity in structure_map.get("maps", []):
         name = entity["entity"]
         rows = rows_by_entity.get(name, [])
-        resources, warnings = build_entity_resources(entity, rows, cm, base)
+        resources, warnings = build_entity_resources(entity, rows, cm, base, tz)
         out[name] = {"resources": resources, "warnings": warnings}
     return out
 

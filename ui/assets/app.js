@@ -87,7 +87,9 @@
 
     // export enabled once no blocking gap remains (override checkbox aside)
     const override = $("#overrideGaps").checked;
-    $("#exportBtn").disabled = gaps > 0 && !override;
+    const blocked = gaps > 0 && !override;
+    $("#exportBtn").disabled = blocked;
+    const smBtn = $("#exportSmBtn"); if (smBtn) smBtn.disabled = blocked;
     $("#overrideWrap").classList.toggle("hidden", gaps === 0);
   }
 
@@ -426,16 +428,45 @@
     });
   }
 
+  function buildConceptMap() {
+    // group accepted mappings by (source table, target system) → FHIR ConceptMap groups (R4)
+    const groups = {};
+    Object.values(state.termMap).forEach(m => {
+      const key = m.src_table + "||" + m.system;
+      const g = groups[key] || (groups[key] = {
+        source: "urn:bupa:source:" + m.src_table, target: m.system, element: []
+      });
+      g.element.push({
+        code: String(m.src_code),
+        ...(m.src_display ? { display: m.src_display } : {}),
+        target: [{
+          code: String(m.code),
+          ...(m.display ? { display: m.display } : {}),
+          equivalence: "equivalent"   // human-accepted; R4 ConceptMap.group.element.target.equivalence
+        }]
+      });
+    });
+    return {
+      resourceType: "ConceptMap",
+      url: "https://fhir.bupa.cl/ConceptMap/source-to-standard",
+      name: "SourceToStandardConceptMap",
+      status: "draft", experimental: true,
+      date: new Date().toISOString().slice(0, 10),
+      description: "Source coded values mapped to standard concepts (reviewed via the Termbox terminology server).",
+      group: Object.values(groups)
+    };
+  }
+
   function exportConceptMap() {
-    const rows = Object.values(state.termMap).map(m => ({
-      source: { table: m.src_table, code: m.src_code, display: m.src_display },
-      target: { system: m.system, code: m.code, display: m.display }, score: m.score
-    }));
-    const blob = new Blob([JSON.stringify({ generated_at: new Date().toISOString().slice(0, 10), concept_maps: rows }, null, 2)],
-      { type: "application/json" });
+    download(buildConceptMap(), "conceptmap.json");
+    toast("ConceptMap exported");
+  }
+
+  function download(obj, filename) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "concept_map.json"; a.click();
-    URL.revokeObjectURL(url); toast("Exported");
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ---- source tab --------------------------------------------------------
@@ -709,12 +740,61 @@
         if (r) { rr.review_state = r.s; if (r.note) rr.review_note = r.note; }
       });
     });
-    const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "structure_map.json"; a.click();
-    URL.revokeObjectURL(url);
+    download(out, "structure_map.json");
     toast("Exported");
+  }
+
+  // Compile the reviewed map into a FHIR StructureMap resource (best-effort
+  // skeleton for review — not execution-ready). context.md open item §1.
+  function buildStructureMap() {
+    const sm = state.structureMap;
+    const structures = [{ url: "urn:bupa:source:provider", mode: "source", alias: "src" }];
+    const seen = new Set();
+    const groups = [];
+    const transformOf = (t) => t === "code-translation" ? "translate"
+      : t === "fixed" ? "copy" : t === "calculated" ? "evaluate" : "copy";
+    const leaf = (el) => String(el || "").replace(/^[^.]+\./, "");
+    (sm.maps || []).forEach((e) => {
+      const tgtUrl = "https://fhir.bupa.cl/StructureDefinition/" + e.target_profile;
+      if (!seen.has(e.target_profile)) {
+        structures.push({ url: tgtUrl, mode: "target", alias: e.entity });
+        seen.add(e.target_profile);
+      }
+      const rules = [];
+      (e.mappings || []).forEach((m, i) => {
+        if (state.review[`${e.entity}:map:${i}`] && state.review[`${e.entity}:map:${i}`].s === "rejected") return;
+        rules.push({
+          name: "r_" + (m.source && m.source.column ? m.source.column : i),
+          source: [{ context: "src", element: (m.source.table ? m.source.table + "." : "") + m.source.column }],
+          target: [{ context: e.entity, element: leaf(m.target && m.target.element), transform: transformOf(m.transform) }]
+        });
+      });
+      (e.references || []).forEach((r, i) => {
+        rules.push({
+          name: "ref_" + i,
+          source: [{ context: "src", element: r.source_fk }],
+          target: [{ context: e.entity, element: leaf(r.target && r.target.element), transform: "reference" }]
+        });
+      });
+      groups.push({
+        name: "map" + e.entity, typeMode: "none",
+        input: [{ name: "src", mode: "source" }, { name: e.entity, type: e.entity, mode: "target" }],
+        rule: rules
+      });
+    });
+    return {
+      resourceType: "StructureMap",
+      url: "https://fhir.bupa.cl/StructureMap/source-to-bupa",
+      name: "SourceToBupa", status: "draft", experimental: true,
+      date: new Date().toISOString().slice(0, 10),
+      description: "Generated from the reviewed structure map — a skeleton for review, not execution-ready.",
+      structure: structures, group: groups
+    };
+  }
+
+  function exportStructureMap() {
+    download(buildStructureMap(), "structuremap.json");
+    toast("FHIR StructureMap exported");
   }
 
   // ---- toast -------------------------------------------------------------
@@ -776,6 +856,7 @@
     $$(".suggests button").forEach(b => b.addEventListener("click", () => askCopilot(b.textContent)));
     // export + override
     $("#exportBtn").addEventListener("click", exportMap);
+    $("#exportSmBtn").addEventListener("click", exportStructureMap);
     $("#overrideGaps").addEventListener("change", renderHeader);
 
     bootstrap();

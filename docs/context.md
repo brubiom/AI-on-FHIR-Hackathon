@@ -2,7 +2,7 @@
 
 **Project:** Clinical Interoperability Copilot
 **Role:** given the metadata of a source SQL database and the implementation guide, propose **structure maps** (source → FHIR), fully cited.
-**Reference guide:** Bupa Chile Core Implementation Guide (`fhir.bupa.core` 4.6.0, FHIR R4)
+**Reference guide:** CL Core — Guía de Implementación cl core (`hl7.fhir.cl.clcore` 1.9.3, FHIR R4)
 **Document version:** 3.0 · November 2026
 
 ---

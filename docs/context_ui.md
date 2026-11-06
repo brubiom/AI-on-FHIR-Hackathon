@@ -90,7 +90,7 @@ Where the integrator points the app at a database (or uploads `source_metadata.j
 
 - **Connect / upload:** engine + read-only connection, or drop a `source_metadata.json` / `.sql` dump. One primary action: *Load source*.
 - **Detection summary:** tables with row counts, detected **candidate entities** (Appointment, Patient), and **lookup tables** found — each a neutral chip. The normal case carries no color.
-- **Guide status:** which guide loaded (`fhir.bupa.core 4.6.0`) and that it indexed.
+- **Guide status:** which guide loaded (`hl7.fhir.cl.clcore 1.9.3`) and that it indexed.
 - Primary action when ready: *Generate structure map* → opens the Mapping tab with an explicit progress state (never a silent wait).
 
 Empty state copy is an invitation, not decoration: "Point at a database or drop its metadata to begin."

@@ -65,7 +65,7 @@ between them so each half can evolve independently.
 | --- | --- | --- | --- |
 | 1 | **Source database** | `src/source_db/` | A Postgres `provider` DB (docker-compose, `localhost:5440`) simulating a hospital's ADT/LIS/PACS/RIS + interface engine, plus spreadsheet code lists in `vocab/*.csv`. Deliberately messy: local codes and standard codes mixed. Seed with `reset-db.sh`. |
 | 2 | **Metadata extractor** | `src/extractor/pg_metadata_extractor.py` | Deterministic. Reads the catalog via the container's `psql` (no driver needed) → `source_metadata.json`: tables, columns, SQL types, nullability, declared PK/FK, detected lookups + contents. Never interprets meaning. (`metadata_extractor.py` is the SQLite equivalent for the original synthetic fixture.) |
-| 3 | **Guide store** | `src/guide/` | The Implementation Guide (`fhir.bupa.core`) loaded into `guide.db`. Load it from a **FHIR package** (`load_ig.py`: StructureDefinition → `campos`, logical models → `modelos`, ValueSet/CodeSystem → `terminologias`) or **CSVs** (`load_guide.py`). Queried by five Phase-B tools in `tools.py`. |
+| 3 | **Guide store** | `src/guide/` | The Implementation Guide (`hl7.fhir.cl.clcore` 1.9.3, CL Core) loaded into `guide.db`. Load it from a **FHIR package** (`load_ig.py`: StructureDefinition → `campos`, logical models → `modelos`, ValueSet/CodeSystem → `terminologias`) or **CSVs** (`load_guide.py`). Queried by five Phase-B tools in `tools.py`. |
 | 4 | **Terminology** | `src/terminology/` | Suggests up to 3 **verified** standard concepts (SNOMED CT, LOINC, RxNorm, ICD-10-CM…) for one source concept, via the Termbox MCP server. Exposed as the `sugerir_conceptos` agent tool. The agent never writes a standard code from memory. |
 | 5 | **Agent** | `src/agent/` | The judgment. A manual Anthropic tool-use loop (`agent.py`) driven by the system prompt (`prompts.py`): Phase A (understand source) → B (query guide + terminology) → C (propose). Emits `structure_map.json`. Model `claude-opus-5-5`. |
 | 6 | **Review UI** | `ui/` | The integrator's workbench (see [context_ui.md](context_ui.md)): the reconciliation table with the warm/cool "two worlds, one seam", a detail **pop-up** per row, confidence meter, citations, the Gaps tab, the Copilot, and Export. Reads the two contracts; writes review decisions into the exported map. |
@@ -122,7 +122,7 @@ docker compose up --build                 # → http://localhost:8000
 ANTHROPIC_API_KEY=sk-... docker compose up --build
 
 # one-off pipeline steps in the app container
-docker compose run --rm app python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+docker compose run --rm app python main.py load-ig guide/clcore.tgz
 docker compose run --rm app python main.py agent        # → data/structure_map.json
 ```
 
@@ -141,7 +141,7 @@ py -3.12 -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 set ANTHROPIC_API_KEY=...                  # PowerShell: $env:ANTHROPIC_API_KEY="..."
 python main.py extract                      # → data/source_metadata.json
-python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+python main.py load-ig guide/clcore.tgz
 python main.py agent                        # → data/structure_map.json
 python serve.py                             # http://localhost:8000
 ```

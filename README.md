@@ -1,7 +1,7 @@
 # Structure Map Agent — Clinical Interoperability Copilot
 
 Given the **metadata of a source SQL database** and a **FHIR implementation
-guide** (Bupa Chile Core, `fhir.bupa.core` 4.6.0, FHIR R4), the agent proposes a
+guide** (CL Core — Guía de Implementación cl core, `hl7.fhir.cl.clcore` 1.9.3, FHIR R4), the agent proposes a
 **structure map**: for each source column, which FHIR element it should map to,
 with what type, terminology and transformation — **citing the exact source for
 every decision**.
@@ -54,7 +54,7 @@ stable Python 3.12 — so you don't need a stable Python on the host:
 docker compose up --build                            # → http://localhost:8000
 ANTHROPIC_API_KEY=sk-... docker compose up --build   # agent enabled
 # one-off steps in the app container:
-docker compose run --rm app python main.py load-ig guide/fhir.bupa.core-4.6.0.tgz
+docker compose run --rm app python main.py load-ig guide/clcore.tgz
 docker compose run --rm app python main.py agent
 ```
 

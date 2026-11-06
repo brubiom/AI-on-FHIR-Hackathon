@@ -55,7 +55,8 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.review)); } catch (e) {}
   }
 
-  const entity = () => state.structureMap.maps[state.entityIndex];
+  const hasMaps = () => !!(state.structureMap && state.structureMap.maps && state.structureMap.maps.length);
+  const entity = () => (state.structureMap.maps || [])[state.entityIndex] || null;
   const rkey = (kind, i) => `${entity().entity}:${kind}:${i}`;
   const reviewOf = (kind, i) => state.review[rkey(kind, i)] || null;
 
@@ -72,8 +73,19 @@
 
   // ---- render: header / counters ----------------------------------------
   function renderHeader() {
-    const maps = state.structureMap.maps;
+    const maps = state.structureMap.maps || [];
     const sel = $("#entitySelect");
+    if (!hasMaps()) {
+      // blank environment — nothing mapped yet
+      sel.innerHTML = "";
+      $("#targetProfile").textContent = "—";
+      $("#counter").innerHTML = "<b>0</b> mappings — go to Source → Generate";
+      const gp = $("#gapsPill"); gp.textContent = ""; gp.classList.add("hidden");
+      $("#exportBtn").disabled = true;
+      const sm = $("#exportSmBtn"); if (sm) sm.disabled = true;
+      $("#overrideWrap").classList.add("hidden");
+      return;
+    }
     sel.innerHTML = maps.map((m, i) =>
       `<option value="${i}" ${i === state.entityIndex ? "selected" : ""}>${esc(m.entity)}</option>`).join("");
     $("#targetProfile").textContent = entity().target_profile;
@@ -165,6 +177,13 @@
 
   function renderMapping() {
     const e = entity();
+    if (!e) {
+      $("#stage").className = "stage";
+      $("#stage").innerHTML = `<div class="panel"><h3>No mappings yet</h3>
+        <p class="lead">The environment is blank. Go to the <b>Source</b> tab, confirm the live
+        database and guide, then press <b>Generate structure map</b> to map the resources live.</p></div>`;
+      return;
+    }
     const rows = (e.mappings || []).map(mappingRow).join("") +
       (e.references || []).map(referenceRow).join("");
     $("#stage").innerHTML = `
@@ -268,6 +287,12 @@
   // ---- gaps tab ----------------------------------------------------------
   function renderGaps() {
     const e = entity();
+    if (!e) {
+      $("#stage").className = "stage";
+      $("#stage").innerHTML = `<div class="panel"><h3>No gaps yet</h3>
+        <p class="lead">Generate a structure map first (Source → Generate).</p></div>`;
+      return;
+    }
     const unfilled = e.unfilled_required || [];
     const unmapped = e.unmapped_source || [];
     const amb = e.ambiguities || [];
@@ -804,6 +829,7 @@
   // ---- copilot (cited stub) ---------------------------------------------
   function copilotAnswer(q) {
     const e = entity();
+    if (!e) return { text: "No structure map yet — go to Source → Generate to map the resources live.", cite: null };
     const ql = q.toLowerCase();
     // very small canned, cited responder keyed off the selection / keywords
     if (state.selected && (ql.includes("why") || ql.includes("por qu"))) {
@@ -988,13 +1014,18 @@
   }
 
   function bootstrap() {
+    let served = false, gotMap = false;
     Promise.all([
-      tryLoad("./data/source_metadata.json", (d) => { if (d && d.tables) state.sourceMeta = d; }),
+      tryLoad("./data/source_metadata.json", (d) => { if (d && d.tables) { state.sourceMeta = d; served = true; } }),
       tryLoad("./data/structure_map.json", (d) => {
-        if (d && d.maps) state.structureMap = d;
-        else if (d && d.entity) state.structureMap = { generated_at: d.generated_at || "", maps: [d] };
+        if (d && d.maps) { state.structureMap = d; gotMap = true; }
+        else if (d && d.entity) { state.structureMap = { generated_at: d.generated_at || "", maps: [d] }; gotMap = true; }
       })
-    ]).then(() => render());
+    ]).then(() => {
+      // Running on the platform with no map yet → start blank (map live in the demo).
+      if (served && !gotMap) state.structureMap = { generated_at: "", maps: [] };
+      render();
+    });
   }
 
   document.addEventListener("DOMContentLoaded", init);

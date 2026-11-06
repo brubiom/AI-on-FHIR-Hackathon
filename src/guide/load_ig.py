@@ -1,6 +1,6 @@
 """Load a FHIR Implementation Guide package into the guide store.
 
-A real FHIR IG (e.g. fhir.bupa.core 4.6.0) ships as an npm tarball or a folder
+A real FHIR IG (e.g. hl7.fhir.cl.clcore 1.9.3) ships as an npm tarball or a folder
 of FHIR JSON resources: StructureDefinition (profiles + logical models),
 ValueSet and CodeSystem. This loader reads those resources and builds the same
 SQLite guide store (`guide.db`) the Phase B tools already query — so the agent
